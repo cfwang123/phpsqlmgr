@@ -1,2 +1,121 @@
-*.agdai
-**/MAlonzo/**
+# ── Secrets & local config ───────────────────────────────
+# Use config/config.example.php as the public template.
+# Real config may contain app_key, passwords, absolute paths — do not commit.
+config/config.php
+config/config.local.php
+config/*.local.php
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+secrets/
+credentials.json
+/design
+AGENTS.md
+
+# ── Runtime / local data ─────────────────────────────────
+/tmp/*
+!/tmp/.gitkeep
+/tmp/back/*
+!/tmp/back/.gitkeep
+
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/cache/*
+!/storage/cache/.gitkeep
+
+# SQLite jail: keep directory, ignore DB files (except you opt-in a sample)
+/storage/sqlite/*
+!/storage/sqlite/.gitkeep
+# Uncomment to track a sample empty DB:
+# !/storage/sqlite/demo.db
+
+# PHP sessions / uploads if ever stored under project
+/storage/sessions/*
+/storage/uploads/*
+/sessions/
+/uploads/
+
+# ── Dependencies ─────────────────────────────────────────
+/vendor/
+composer.phar
+composer.lock
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ── Logs & caches ────────────────────────────────────────
+*.log
+*.cache
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpunit.cache/
+/cache/
+/var/cache/
+/var/log/
+
+# ── Build / generated (optional) ─────────────────────────
+# XUI core.js is rebuilt from assets/xui/src/ on page load;
+# keep it committed for zero-step deploy. Uncomment to ignore:
+# /assets/xui/core.js
+
+# ── IDE / OS ─────────────────────────────────────────────
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.stackdump
+
+# ── Backups & one-off ────────────────────────────────────
+*.bak
+*.old
+*.orig
+*.tmp
+*.temp
+*~
+*.rej
+*.swp
+
+# ── Test / measure artifacts under tmp ───────────────────
+tmp/*.png
+tmp/*.jpg
+tmp/*.jpeg
+tmp/*.webp
+tmp/*.json
+tmp/*.html
+tmp/*.mjs
+tmp/*.py
+tmp/*.ps1
+tmp/*.7z
+tmp/*.zip
+tmp/unit_*
+tmp/measure_*
+tmp/find_*
+tmp/split_*
+tmp/grid_*
+tmp/add_*
+
+# ── Large / generated vendor font demos (optional keep) ──
+# Uncomment if demos bloat the repo:
+# assets/xui/fonts/**/demo*
+# assets/xui/fonts/**/*.7z
+
+# ── Agent / local tooling (if present under project) ─────
+.grok/
+.claude/
+.cursor/
+*.local.md
+TODO.md

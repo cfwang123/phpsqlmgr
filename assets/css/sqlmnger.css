@@ -1,0 +1,2817 @@
+/* sqlmnger 壳层：Tabs + VirtualGrid 高度撑满 */
+/* Toast 样式已在 XUI classic.css（.x-toast*） */
+html, body {
+	margin: 0;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* border center 内的 tabpanel 占满 */
+.xct > .xpnl {
+	flex: 1;
+	min-height: 0;
+	height: 100%;
+}
+
+/* 页内容区：去掉默认 padding，由表格页自己布局 */
+.xct > .xpnl > .xtbd {
+	padding: 0;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+/* 激活页：flex 列，便于 VirtualGrid 吃满高度 */
+.xct > .xpnl > .xtbd > .pg.act {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	overflow: hidden;
+	box-sizing: border-box;
+}
+
+.xct > .xpnl > .xtbd > .pg.act > .xpg,
+.xct > .xpnl > .xtbd > .pg.act > .sqlmnger-table-page {
+	flex: 1;
+	min-height: 0;
+	height: auto;
+}
+
+/* 兼容旧 panel 中心（若仍使用） */
+.xct > .xfld {
+	flex: 1;
+	min-height: 0;
+	border-radius: 0;
+	border: none;
+	box-shadow: none;
+}
+
+.xct > .xfld > .bd {
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.sqlmnger-help code {
+	background: rgba(0, 0, 0, 0.06);
+	padding: 1px 6px;
+	border-radius: 3px;
+	font-size: 0.92em;
+}
+
+/* ─── 登录页 ─── */
+.sqlmnger-login-mask {
+	position: fixed;
+	inset: 0;
+	z-index: 10000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: linear-gradient(145deg, #0f172a 0%, #1e3a5f 45%, #0f766e 100%);
+	padding: 24px;
+	box-sizing: border-box;
+}
+
+.sqlmnger-login-card {
+	width: 100%;
+	max-width: 420px;
+	background: #fff;
+	border-radius: 12px;
+	box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+	padding: 28px 28px 20px;
+	box-sizing: border-box;
+	color: #1e293b;
+}
+/* 连接管理：左侧列表 + 右侧表单 */
+.sqlmnger-login-card-wide {
+	max-width: 760px;
+	padding: 24px 24px 18px;
+}
+.sqlmnger-login-main {
+	display: flex;
+	gap: 20px;
+	align-items: stretch;
+	min-height: 0;
+}
+.sqlmnger-conn-panel {
+	width: 240px;
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	background: #f8fafc;
+	overflow: hidden;
+	min-height: 320px;
+	max-height: min(70vh, 520px);
+}
+.sqlmnger-conn-panel-hd {
+	padding: 10px 12px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #334155;
+	border-bottom: 1px solid #e2e8f0;
+	background: #f1f5f9;
+}
+.sqlmnger-conn-panel-hd i {
+	color: #0d9488;
+	margin-right: 4px;
+}
+.sqlmnger-conn-list {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	padding: 6px;
+}
+.sqlmnger-conn-empty {
+	padding: 20px 12px;
+	text-align: center;
+	font-size: 12px;
+	color: #94a3b8;
+	line-height: 1.5;
+}
+.sqlmnger-conn-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 8px 8px 8px 10px;
+	border-radius: 8px;
+	cursor: pointer;
+	border: 1px solid transparent;
+	margin-bottom: 4px;
+	transition: background .12s, border-color .12s;
+}
+.sqlmnger-conn-item:hover {
+	background: #fff;
+	border-color: #cbd5e1;
+}
+.sqlmnger-conn-item.is-active {
+	background: #fff;
+	border-color: #0d9488;
+	box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.15);
+}
+.sqlmnger-conn-item-main {
+	flex: 1;
+	min-width: 0;
+}
+.sqlmnger-conn-item-name {
+	font-size: 13px;
+	font-weight: 600;
+	color: #0f172a;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sqlmnger-conn-item-sub {
+	font-size: 11px;
+	color: #64748b;
+	margin-top: 2px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sqlmnger-conn-badge {
+	display: inline-block;
+	font-size: 10px;
+	font-weight: 600;
+	color: #0f766e;
+	background: #ccfbf1;
+	border-radius: 4px;
+	padding: 0 5px;
+	line-height: 1.6;
+	margin-right: 2px;
+	vertical-align: middle;
+}
+.sqlmnger-conn-del {
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	border: none;
+	background: transparent;
+	color: #94a3b8;
+	border-radius: 6px;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+}
+.sqlmnger-conn-del:hover {
+	background: #fee2e2;
+	color: #dc2626;
+}
+.sqlmnger-conn-panel-ft {
+	padding: 8px;
+	border-top: 1px solid #e2e8f0;
+}
+.sqlmnger-conn-btn {
+	width: 100%;
+	height: 32px;
+	border: 1px dashed #94a3b8;
+	border-radius: 6px;
+	background: #fff;
+	color: #475569;
+	font-size: 12px;
+	cursor: pointer;
+	font-family: inherit;
+}
+.sqlmnger-conn-btn:hover {
+	border-color: #0d9488;
+	color: #0f766e;
+	background: #f0fdfa;
+}
+.sqlmnger-conn-hint {
+	margin: 0;
+	padding: 0 10px 8px;
+	font-size: 10px;
+	color: #94a3b8;
+	line-height: 1.4;
+}
+.sqlmnger-login-card-wide .sqlmnger-login-form {
+	flex: 1;
+	min-width: 0;
+}
+.sqlmnger-login-actions {
+	display: flex;
+	gap: 10px;
+	margin-top: 4px;
+}
+.sqlmnger-login-actions .sqlmnger-login-btn {
+	flex: 1;
+}
+.sqlmnger-login-btn.secondary {
+	background: #fff;
+	color: #334155;
+	border: 1px solid #cbd5e1;
+	box-shadow: none;
+}
+.sqlmnger-login-btn.secondary:hover:not(:disabled) {
+	background: #f8fafc;
+	border-color: #94a3b8;
+	filter: none;
+}
+@media (max-width: 640px) {
+	.sqlmnger-login-main {
+		flex-direction: column;
+	}
+	.sqlmnger-conn-panel {
+		width: 100%;
+		max-height: 180px;
+		min-height: 120px;
+	}
+}
+
+.sqlmnger-login-hd {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	margin-bottom: 22px;
+}
+
+.sqlmnger-login-logo {
+	width: 48px;
+	height: 48px;
+	border-radius: 12px;
+	background: linear-gradient(135deg, #2563eb, #0d9488);
+	color: #fff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 22px;
+}
+
+.sqlmnger-login-title {
+	font-size: 22px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
+.sqlmnger-login-ver {
+	font-size: 12px;
+	font-weight: 600;
+	color: #64748b;
+	background: #f1f5f9;
+	border: 1px solid #e2e8f0;
+	border-radius: 999px;
+	padding: 1px 8px;
+	margin-left: 6px;
+	vertical-align: middle;
+}
+
+.sqlmnger-login-sub {
+	font-size: 13px;
+	color: #64748b;
+	margin-top: 2px;
+}
+
+.sqlmnger-login-form {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.sqlmnger-field {
+	display: block;
+}
+
+.sqlmnger-field > span {
+	display: block;
+	font-size: 12px;
+	font-weight: 600;
+	color: #475569;
+	margin-bottom: 4px;
+}
+
+.sqlmnger-field > span em {
+	font-style: normal;
+	font-weight: 400;
+	color: #94a3b8;
+}
+
+/* 语言下拉（登录页 + 主界面共用） */
+.sqlmnger-login-lang {
+	display: flex;
+	justify-content: flex-end;
+	margin: -4px 0 8px;
+}
+.sqlmnger-lang-wrap {
+	display: inline-flex;
+	align-items: center;
+	margin-right: 6px;
+	vertical-align: middle;
+}
+.sqlmnger-lang-dd {
+	position: relative;
+	display: inline-block;
+	z-index: 40;
+}
+.sqlmnger-lang-dd-btn {
+	border: 1px solid #cbd5e1;
+	background: #fff;
+	color: #334155;
+	font-size: 12px;
+	height: 28px;
+	padding: 0 8px 0 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+	font-family: inherit;
+	line-height: 1;
+}
+.sqlmnger-lang-dd-btn:hover,
+.sqlmnger-lang-dd.is-open .sqlmnger-lang-dd-btn {
+	border-color: #94a3b8;
+	background: #f8fafc;
+}
+.sqlmnger-lang-dd-label {
+	min-width: 3.5em;
+	text-align: left;
+}
+.sqlmnger-lang-dd-caret {
+	font-size: 10px;
+	color: #94a3b8;
+	margin-left: 2px;
+}
+.sqlmnger-lang-dd-menu {
+	position: absolute;
+	right: 0;
+	top: calc(100% + 4px);
+	min-width: 100%;
+	margin: 0;
+	padding: 4px 0;
+	list-style: none;
+	background: #fff;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+	z-index: 10060;
+}
+.sqlmnger-lang-dd-menu[hidden] {
+	display: none !important;
+}
+.sqlmnger-lang-dd-item {
+	padding: 6px 14px;
+	font-size: 13px;
+	color: #0f172a;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.sqlmnger-lang-dd-item:hover {
+	background: #eff6ff;
+	color: #1d4ed8;
+}
+.sqlmnger-lang-dd-item.is-on {
+	background: #dbeafe;
+	color: #1e40af;
+	font-weight: 600;
+}
+/* 主界面顶栏：与深色/浅色标题栏协调 */
+.sqlmnger-lang-dd-main .sqlmnger-lang-dd-btn {
+	height: 26px;
+	font-size: 12px;
+	border-color: rgba(148, 163, 184, 0.55);
+	background: rgba(255, 255, 255, 0.92);
+}
+
+.sqlmnger-input {
+	width: 100%;
+	box-sizing: border-box;
+	height: 36px;
+	padding: 0 10px;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	font-size: 14px;
+	outline: none;
+	background: #f8fafc;
+	transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sqlmnger-input:focus {
+	border-color: #2563eb;
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+	background: #fff;
+}
+
+.sqlmnger-net-fields {
+	display: flex;
+	gap: 10px;
+}
+
+.sqlmnger-net-fields .sqlmnger-field {
+	flex: 1;
+}
+
+.sqlmnger-field-port {
+	flex: 0 0 100px !important;
+}
+
+.sqlmnger-hint {
+	display: block;
+	margin-top: 4px;
+	font-size: 11px;
+	color: #94a3b8;
+}
+
+.sqlmnger-check {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: #475569;
+	user-select: none;
+}
+
+.sqlmnger-login-msg {
+	min-height: 18px;
+	font-size: 13px;
+	color: #64748b;
+}
+
+.sqlmnger-login-msg.is-err {
+	color: #dc2626;
+}
+
+.sqlmnger-login-msg.is-ok {
+	color: #16a34a;
+}
+
+.sqlmnger-login-msg.is-info {
+	color: #2563eb;
+}
+
+/* 已载入保存密码：输入框为空 + 提示占位，不写明文 value */
+.sqlmnger-login-form input.is-vault-pass {
+	background: #f0fdfa;
+	border-color: #5eead4;
+}
+.sqlmnger-login-form input.is-vault-pass::placeholder {
+	color: #0f766e;
+	opacity: 0.9;
+}
+
+.sqlmnger-login-btn {
+	height: 40px;
+	border: none;
+	border-radius: 8px;
+	background: linear-gradient(135deg, #2563eb, #0d9488);
+	color: #fff;
+	font-size: 15px;
+	font-weight: 600;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	transition: opacity 0.15s, transform 0.1s;
+}
+
+.sqlmnger-login-btn:hover:not(:disabled) {
+	opacity: 0.95;
+}
+
+.sqlmnger-login-btn:active:not(:disabled) {
+	transform: scale(0.99);
+}
+
+.sqlmnger-login-btn:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.sqlmnger-login-ft {
+	margin-top: 16px;
+	text-align: center;
+	font-size: 11px;
+	color: #94a3b8;
+}
+
+/* 顶栏：Logo + 版本 + 连接信息 */
+.xtb .ttl.sqlmnger-ttl {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	margin-right: 12px;
+	flex: 1;
+	min-width: 0;
+	font-weight: normal;
+}
+.xtb .tbr {
+	margin-left: auto;
+	flex-shrink: 0;
+}
+.sqlmnger-brand {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	flex-shrink: 0;
+	user-select: none;
+}
+.sqlmnger-logo {
+	width: 30px;
+	height: 30px;
+	border-radius: 8px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: linear-gradient(145deg, #2563eb 0%, #0d9488 100%);
+	color: #fff;
+	font-size: 15px;
+	box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+}
+.sqlmnger-brand-name {
+	font-size: 16px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	color: var(--x-titlebar-text, #1f2937);
+}
+.sqlmnger-version {
+	font-size: 11px;
+	font-weight: 600;
+	color: #64748b;
+	background: #f1f5f9;
+	border: 1px solid #e2e8f0;
+	border-radius: 999px;
+	padding: 1px 8px;
+	line-height: 1.5;
+}
+.sqlmnger-conn-meta {
+	display: inline-flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px 14px;
+	min-width: 0;
+	font-size: 12px;
+	color: #475569;
+}
+.sqlmnger-meta-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sqlmnger-meta-item i {
+	color: #64748b;
+	font-size: 11px;
+	width: 14px;
+	text-align: center;
+}
+.sqlmnger-meta-item em {
+	font-style: normal;
+	color: #94a3b8;
+	font-size: 11px;
+}
+.sqlmnger-meta-item b {
+	font-weight: 600;
+	color: #0f172a;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sqlmnger-meta-ro {
+	font-size: 11px;
+	font-weight: 600;
+	color: #b45309;
+	background: #fef3c7;
+	border-radius: 4px;
+	padding: 1px 6px;
+}
+.sqlmnger-meta-empty {
+	color: #94a3b8;
+}
+
+/* 顶栏数据库选择（可输入过滤） */
+.sqlmnger-db-wrap {
+	display: inline-flex;
+	align-items: center;
+	margin-right: 12px;
+}
+.sqlmnger-db-label {
+	font-size: 13px;
+	color: inherit;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+}
+.sqlmnger-db-combo-host {
+	display: inline-block;
+	min-width: 180px;
+	max-width: 280px;
+	vertical-align: middle;
+}
+
+/* Combo */
+.sqlmnger-combo {
+	position: relative;
+	display: inline-block;
+	width: 100%;
+}
+.sqlmnger-combo-inner {
+	position: relative;
+	display: flex;
+	align-items: stretch;
+}
+.sqlmnger-combo-input {
+	flex: 1;
+	height: 28px;
+	padding: 0 28px 0 8px;
+	border-radius: 6px;
+	border: 1px solid rgba(0,0,0,0.15);
+	background: #fff;
+	color: #0f172a;
+	font-size: 13px;
+	min-width: 140px;
+	box-sizing: border-box;
+}
+.sqlmnger-combo-caret {
+	position: absolute;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	width: 28px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	color: #64748b;
+}
+.sqlmnger-combo-list {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 100%;
+	z-index: 10050;
+	margin: 2px 0 0;
+	padding: 4px 0;
+	list-style: none;
+	max-height: 260px;
+	overflow: auto;
+	background: #fff;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+/* 顶栏数据库下拉：高度 2 倍，方便长库列表 */
+.sqlmnger-db-combo-host .sqlmnger-combo-list {
+	max-height: 520px;
+}
+.sqlmnger-combo-item {
+	padding: 6px 10px;
+	font-size: 13px;
+	color: #0f172a;
+	cursor: pointer;
+}
+.sqlmnger-combo-item:hover,
+.sqlmnger-combo-item.is-hi {
+	background: #dbeafe;
+}
+/* 过滤关键字高亮 */
+.sqlmnger-combo-item mark.sqlmnger-combo-hl,
+.sqlmnger-combo-hl {
+	background: #fde047;
+	color: inherit;
+	padding: 0 1px;
+	border-radius: 2px;
+	font-weight: 700;
+	box-shadow: inset 0 -1px 0 #eab308;
+}
+.sqlmnger-combo-empty {
+	padding: 8px 10px;
+	font-size: 12px;
+	color: #94a3b8;
+}
+
+/* 面包屑：MySQL » 服务器 » 库 » 表 */
+.sqlmnger-bc {
+	flex-shrink: 0;
+	padding: 6px 14px;
+	background: #eef2ff;
+	border-bottom: 1px solid #c7d2fe;
+	font-size: 13px;
+	line-height: 1.4;
+	color: #312e81;
+}
+.sqlmnger-bc-inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 2px;
+}
+.sqlmnger-bc-link {
+	color: #2563eb;
+	text-decoration: none;
+	cursor: pointer;
+	padding: 0 2px;
+}
+.sqlmnger-bc-link:hover {
+	text-decoration: underline;
+	color: #1d4ed8;
+}
+.sqlmnger-bc-sep {
+	color: #64748b;
+	margin: 0 4px;
+	user-select: none;
+}
+.sqlmnger-bc-cur {
+	color: #0f172a;
+	font-weight: 600;
+	padding: 0 2px;
+}
+
+/* 服务器 / 数据库概览页 */
+.sqlmnger-page-hd {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px 16px;
+	margin-bottom: 12px;
+}
+.sqlmnger-page-title {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 700;
+	color: #0f172a;
+}
+.sqlmnger-page-tools {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 14px;
+}
+.sqlmnger-link-btn {
+	border: none;
+	background: transparent;
+	color: #2563eb;
+	font-size: 13px;
+	cursor: pointer;
+	padding: 2px 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+.sqlmnger-link-btn:hover {
+	text-decoration: underline;
+	color: #1d4ed8;
+}
+.sqlmnger-link-btn.is-on {
+	font-weight: 700;
+	color: #1e3a8a;
+	text-decoration: underline;
+}
+.sqlmnger-server-tools {
+	gap: 10px 16px;
+}
+.sqlmnger-th-click {
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+}
+.sqlmnger-th-click:hover {
+	background: #e5e7eb !important;
+}
+.sqlmnger-th-sort {
+	font-size: 10px;
+	color: #9ca3af;
+	font-weight: 400;
+}
+.sqlmnger-th-sort.is-on {
+	color: #4b5563;
+	font-weight: 700;
+}
+.sqlmnger-admin-table td {
+	max-width: 420px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sqlmnger-cell-pre {
+	white-space: pre-wrap;
+	word-break: break-all;
+	max-width: 560px;
+	font-family: ui-monospace, Consolas, monospace;
+	font-size: 12px;
+}
+.sqlmnger-kill-btn {
+	font-size: 11px !important;
+	padding: 1px 6px !important;
+	min-height: 22px;
+}
+.sqlmnger-server-meta {
+	font-size: 13px;
+	color: #334155;
+	line-height: 1.7;
+	margin-bottom: 14px;
+}
+.sqlmnger-server-meta b {
+	color: #0f172a;
+}
+.sqlmnger-db-search {
+	margin-bottom: 10px;
+	font-size: 13px;
+	color: #475569;
+}
+.sqlmnger-db-search-inp {
+	min-width: 200px;
+	height: 28px;
+	margin-left: 6px;
+}
+.sqlmnger-db-sub {
+	margin-bottom: 8px;
+	font-size: 14px;
+}
+.sqlmnger-overview-table-wrap {
+	overflow: auto;
+	border: 1px solid #d1d5db;
+	border-radius: 6px;
+	background: #fff;
+}
+.sqlmnger-overview-table {
+	width: 100%;
+	border-collapse: collapse;
+	border: 1px solid #d1d5db;
+	font-size: 12px;
+	background: #fff;
+	color: #374151;
+}
+.sqlmnger-overview-table th,
+.sqlmnger-overview-table td {
+	border: 1px solid #d1d5db;
+	padding: 3px 8px;
+	text-align: left;
+	vertical-align: middle;
+	line-height: 1.25;
+}
+.sqlmnger-overview-table .c-check {
+	width: 28px;
+	padding-left: 6px;
+	padding-right: 4px;
+}
+.sqlmnger-overview-table .c-check input {
+	margin: 0;
+	vertical-align: middle;
+}
+/* 淡灰表头（服务器 / 数据库 / 导出选表等共用） */
+.sqlmnger-overview-table th {
+	background: #f3f4f6;
+	color: #4b5563;
+	font-weight: 600;
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+.sqlmnger-overview-table tbody tr {
+	background: #fff;
+}
+.sqlmnger-overview-table tbody tr:nth-child(even) {
+	background: #f9fafb;
+}
+.sqlmnger-overview-table tbody tr:hover {
+	background: #f3f4f6;
+}
+.sqlmnger-overview-table .num {
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	white-space: nowrap;
+}
+.sqlmnger-overview-table .muted {
+	color: #64748b;
+}
+.sqlmnger-overview-table .c-check {
+	width: 28px;
+	text-align: center;
+}
+.sqlmnger-db-link,
+.sqlmnger-tbl-link {
+	color: #2563eb;
+	text-decoration: none;
+	font-weight: 600;
+}
+.sqlmnger-db-link:hover,
+.sqlmnger-tbl-link:hover {
+	text-decoration: underline;
+}
+.sqlmnger-badge {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	color: #6d28d9;
+	background: #ede9fe;
+	border-radius: 4px;
+	padding: 0 6px;
+	margin-left: 4px;
+}
+
+/* 左侧：SQL命令 / 新建表 */
+.sqlmnger-west-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 10px;
+	padding: 8px 10px 6px;
+	border-bottom: 1px solid var(--x-border, #e2e8f0);
+	background: #fff;
+	flex-shrink: 0;
+}
+.sqlmnger-west-act {
+	border: none;
+	background: transparent;
+	color: #2563eb;
+	font-size: 13px;
+	cursor: pointer;
+	padding: 2px 4px;
+	border-radius: 4px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+.sqlmnger-west-act:hover {
+	background: #eff6ff;
+	color: #1d4ed8;
+	text-decoration: underline;
+}
+.sqlmnger-west-act i {
+	font-size: 12px;
+}
+
+.sqlmnger-table-filter {
+	padding: 8px;
+	border-bottom: 1px solid #e2e8f0;
+	flex-shrink: 0;
+}
+.sqlmnger-table-filter-input {
+	width: 100%;
+	height: 30px;
+	box-sizing: border-box;
+}
+.sqlmnger-tree-box {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
+.sqlmnger-west .bd {
+	display: flex !important;
+	flex-direction: column !important;
+}
+
+/* 西侧导航：表树 */
+.xnv {
+	display: flex;
+	flex-direction: column;
+	width: 260px;
+}
+.xnv > .xfld,
+.xnv > .sqlmnger-west {
+	flex: 1;
+	min-height: 0;
+	height: 100%;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+}
+.sqlmnger-west .bd {
+	padding: 0 !important;
+	overflow: auto !important;
+}
+.sqlmnger-tree-loading {
+	padding: 12px;
+	color: #64748b;
+	font-size: 13px;
+}
+/* 左侧表名过滤高亮 */
+.sqlmnger-tree-box .xtre .tx mark.sqlmnger-hl,
+mark.sqlmnger-hl {
+	background: #fde047;
+	color: inherit;
+	padding: 0 1px;
+	border-radius: 2px;
+	font-weight: 600;
+	box-shadow: inset 0 -1px 0 #eab308;
+}
+
+/* 表页工具条（紧凑：一行可放更多按钮） */
+.sqlmnger-tp-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	border-bottom: 1px solid var(--x-border, #e2e8f0);
+	background: var(--x-panel-hd-bg, #f8fafc);
+	flex-shrink: 0;
+	flex-wrap: wrap;
+	min-height: 0;
+}
+.sqlmnger-tp-btn {
+	height: 22px;
+	padding: 0 6px;
+	border: 1px solid #cbd5e1;
+	border-radius: 4px;
+	background: #fff;
+	cursor: pointer;
+	font-size: 12px;
+	line-height: 1;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	white-space: nowrap;
+	box-sizing: border-box;
+	flex-shrink: 0;
+}
+.sqlmnger-tp-btn i {
+	font-size: 11px;
+	line-height: 1;
+}
+.sqlmnger-tp-btn:hover {
+	background: #f1f5f9;
+}
+.sqlmnger-tp-btn.is-on {
+	background: #2563eb;
+	border-color: #2563eb;
+	color: #fff;
+}
+.sqlmnger-tp-btn.primary {
+	background: #0d9488;
+	border-color: #0d9488;
+	color: #fff;
+}
+.sqlmnger-tp-btn.primary:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.sqlmnger-tp-btn.danger {
+	color: #b91c1c;
+	border-color: #fca5a5;
+}
+.sqlmnger-tp-btn.is-active {
+	background: #dbeafe;
+	border-color: #60a5fa;
+	color: #1d4ed8;
+	font-weight: 600;
+}
+.sqlmnger-tp-title {
+	font-weight: 600;
+	margin-left: 4px;
+	font-size: 12px;
+	white-space: nowrap;
+}
+.sqlmnger-tp-msg {
+	margin-left: auto;
+	font-size: 11px;
+	color: #64748b;
+}
+.sqlmnger-tp-msg.is-ok { color: #16a34a; }
+.sqlmnger-tp-msg.is-err { color: #dc2626; }
+.sqlmnger-tp-msg.is-info { color: #2563eb; }
+
+/* 表数据导出：范围 + 格式 + 打开/导出 下拉（默认顶栏样式；.is-footer 为表格右下） */
+.sqlmnger-export-wrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	margin-left: 2px;
+	padding: 1px 4px 1px 6px;
+	border: 1px solid #cbd5e1;
+	border-radius: 4px;
+	background: #fff;
+	flex-shrink: 0;
+}
+/* 挂在 VirtualGrid 底栏时：紧凑 + 菜单向上展开，避免被裁切 */
+.sqlmnger-export-wrap.is-footer {
+	margin-left: 0;
+	padding: 1px 4px 1px 6px;
+	background: #f8fafc;
+}
+.sqlmnger-export-wrap.is-footer .sqlmnger-export-dd-menu {
+	top: auto;
+	bottom: calc(100% + 2px);
+	right: 0;
+	box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.12);
+}
+.sqlmnger-export-label {
+	font-size: 11px;
+	font-weight: 700;
+	color: #64748b;
+	margin: 0;
+	white-space: nowrap;
+}
+.sqlmnger-export-scope,
+.sqlmnger-export-fmt {
+	height: 20px;
+	border: 1px solid #e2e8f0;
+	border-radius: 3px;
+	padding: 0 2px;
+	font-size: 11px;
+	background: #f8fafc;
+	color: #0f172a;
+	max-width: 88px;
+}
+.sqlmnger-export-wrap .sqlmnger-tp-btn {
+	height: 20px;
+	padding: 0 6px;
+	font-size: 11px;
+	border-color: #94a3b8;
+}
+.sqlmnger-export-wrap .sqlmnger-tp-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.sqlmnger-export-dd {
+	position: relative;
+	display: inline-flex;
+}
+.sqlmnger-export-dd.is-open .sqlmnger-export-toggle {
+	background: #e2e8f0;
+}
+.sqlmnger-export-dd-menu {
+	position: absolute;
+	top: calc(100% + 2px);
+	right: 0;
+	z-index: 40;
+	min-width: 96px;
+	padding: 3px;
+	border: 1px solid #cbd5e1;
+	border-radius: 4px;
+	background: #fff;
+	box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.sqlmnger-export-dd-menu[hidden] {
+	display: none !important;
+}
+.sqlmnger-export-dd-menu button {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	height: 24px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: 3px;
+	background: transparent;
+	color: #0f172a;
+	font-size: 12px;
+	cursor: pointer;
+	text-align: left;
+	white-space: nowrap;
+}
+.sqlmnger-export-dd-menu button:hover {
+	background: #eff6ff;
+	color: #1d4ed8;
+}
+.sqlmnger-export-dd-menu button i {
+	font-size: 11px;
+	width: 12px;
+	text-align: center;
+	opacity: 0.85;
+}
+
+/* 导出预览 X.Window（与主界面白底一致） */
+.sqlmnger-export-win .xwin-bd {
+	background: #fff;
+	overflow: hidden;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+.sqlmnger-export-preview {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	height: 100%;
+	min-height: 0;
+	box-sizing: border-box;
+	background: #fff;
+}
+.sqlmnger-export-preview-meta {
+	flex-shrink: 0;
+	padding: 6px 12px;
+	font-size: 12px;
+	color: #64748b;
+	background: #f8fafc;
+	border-bottom: 1px solid #e2e8f0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sqlmnger-export-preview-pre {
+	flex: 1;
+	min-height: 0;
+	margin: 0;
+	padding: 12px 14px;
+	overflow: auto;
+	font: 12px/1.45 Consolas, "Courier New", monospace;
+	color: #0f172a;
+	background: #fff;
+	white-space: pre-wrap;
+	word-break: break-word;
+	tab-size: 2;
+	box-sizing: border-box;
+}
+.sqlmnger-export-preview-note {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px 28px;
+	font-size: 13px;
+	line-height: 1.6;
+	color: #475569;
+	text-align: center;
+	background: #fff;
+}
+/* 改表：主键依赖方案对话框 */
+.sqlmnger-dep-dialog {
+	height: auto;
+	min-height: 0;
+}
+.sqlmnger-dep-dialog .sqlmnger-export-preview-meta {
+	white-space: pre-wrap;
+	overflow: visible;
+	text-overflow: unset;
+	line-height: 1.5;
+	color: #334155;
+}
+.sqlmnger-dep-plan-title {
+	flex-shrink: 0;
+	margin: 10px 0 4px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #0f172a;
+}
+.sqlmnger-dep-plan-list {
+	flex-shrink: 0;
+	margin: 0 0 8px 1.2em;
+	padding: 0;
+	font-size: 13px;
+	line-height: 1.55;
+	color: #334155;
+}
+.sqlmnger-dep-dialog .sqlmnger-export-preview-pre {
+	flex: 1 1 auto;
+	min-height: 120px;
+	max-height: 280px;
+	border: 1px solid #e2e8f0;
+	border-radius: 4px;
+	background: #f8fafc;
+}
+/* 底栏：默认 xwin-bbr 仅 26px，装不下按钮；对齐创建库弹窗 */
+.sqlmnger-export-win .xwin-bbr.sqlmnger-export-win-bbr,
+.sqlmnger-export-win-bbr {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 8px;
+	height: auto;
+	min-height: 44px;
+	padding: 8px 12px;
+	background: #f8fafc;
+	border-top: 1px solid #e2e8f0;
+	box-sizing: border-box;
+}
+.sqlmnger-export-win-bbr .xbtn {
+	height: 28px;
+	padding: 0 12px;
+	font-size: 13px;
+	line-height: 1;
+	flex-shrink: 0;
+}
+.sqlmnger-export-win-bbr .xbtn.primary {
+	background: #0d9488;
+	border-color: #0d9488;
+	color: #fff;
+}
+.sqlmnger-export-win-bbr .xbtn.primary:hover {
+	background: #0f766e;
+	border-color: #0f766e;
+}
+
+/* 数据库 导出 / 导入 弹窗 */
+.sqlmnger-dbio-body {
+	font-size: 13px;
+	color: #0f172a;
+}
+.sqlmnger-dbio-msg {
+	min-height: 18px;
+	margin-bottom: 8px;
+	font-size: 12px;
+	color: #64748b;
+}
+.sqlmnger-dbio-msg.is-ok { color: #16a34a; }
+.sqlmnger-dbio-msg.is-err { color: #dc2626; }
+.sqlmnger-dbio-msg.is-info { color: #2563eb; }
+.sqlmnger-dbio-form {
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	padding: 8px 10px;
+	background: #f8fafc;
+	margin-bottom: 10px;
+}
+.sqlmnger-dbio-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	padding: 5px 0;
+	border-bottom: 1px solid #e2e8f0;
+}
+.sqlmnger-dbio-row:last-child {
+	border-bottom: 0;
+}
+.sqlmnger-dbio-row .lab {
+	flex: 0 0 64px;
+	font-weight: 700;
+	color: #475569;
+	font-size: 12px;
+}
+.sqlmnger-dbio-opt {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: #334155;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.sqlmnger-dbio-db {
+	font-size: 13px;
+	margin-right: 8px;
+}
+.sqlmnger-dbio-sel {
+	height: 26px;
+	min-width: 140px;
+	font-size: 12px;
+}
+.sqlmnger-dbio-tbl-wrap {
+	max-height: 260px;
+	overflow: auto;
+	border: 1px solid #cbd5e1;
+	border-radius: 4px;
+}
+.sqlmnger-dbio-tbl {
+	font-size: 12px;
+}
+.sqlmnger-dbio-hint {
+	margin: 0 0 10px;
+	font-size: 13px;
+	color: #475569;
+	line-height: 1.5;
+}
+.sqlmnger-dbio-import-box {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+.sqlmnger-dbio-import-card {
+	flex: 1;
+	min-width: 240px;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	padding: 12px 14px;
+	background: #fff;
+}
+.sqlmnger-dbio-import-title {
+	font-weight: 700;
+	margin-bottom: 10px;
+	color: #0f172a;
+}
+.sqlmnger-dbio-file-lab {
+	display: block;
+	font-size: 12px;
+	color: #64748b;
+	margin-bottom: 6px;
+}
+.sqlmnger-dbio-file-name {
+	font-size: 12px;
+}
+.sqlmnger-dbio-log {
+	margin-top: 12px;
+	max-height: 200px;
+	overflow: auto;
+}
+.sqlmnger-dbio-log .ok { color: #16a34a; font-weight: 600; }
+.sqlmnger-dbio-log .err { color: #dc2626; }
+.sqlmnger-dbio-err-row {
+	background: #fef2f2;
+}
+.sqlmnger-dbio-prev {
+	font-family: Consolas, monospace;
+	font-size: 11px;
+	max-width: 360px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* WHERE 过滤器：单行 summary 样式，直接编辑/应用 */
+.sqlmnger-where-summary {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 8px;
+	border-bottom: 1px solid #cbd5e1;
+	background: #f8fafc;
+	font-size: 12px;
+	min-height: 28px;
+	box-sizing: border-box;
+}
+.sqlmnger-where-summary.is-active {
+	border-bottom-color: #93c5fd;
+	background: linear-gradient(90deg, #eff6ff 0%, #f0f9ff 100%);
+}
+.sqlmnger-where-summary-ico {
+	color: #2563eb;
+	flex-shrink: 0;
+}
+.sqlmnger-where-summary-label {
+	font-weight: 700;
+	color: #1d4ed8;
+	flex-shrink: 0;
+	letter-spacing: 0.02em;
+}
+.sqlmnger-where-summary-inp {
+	flex: 1;
+	min-width: 120px;
+	height: 22px;
+	box-sizing: border-box;
+	border: 1px solid #bfdbfe;
+	border-radius: 3px;
+	padding: 0 6px;
+	font-family: Consolas, "Courier New", monospace;
+	font-size: 12px;
+	color: #0f172a;
+	background: #fff;
+}
+.sqlmnger-where-summary-inp:focus {
+	outline: none;
+	border-color: #2563eb;
+	box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.sqlmnger-where-summary.is-active .sqlmnger-where-summary-inp {
+	background: #fffbeb;
+	border-color: #fbbf24;
+}
+.sqlmnger-where-summary .sqlmnger-tp-btn {
+	height: 22px;
+	padding: 0 6px;
+	font-size: 12px;
+	flex-shrink: 0;
+}
+.sqlmnger-limit-wrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	margin-left: 2px;
+	flex-shrink: 0;
+	padding-left: 6px;
+	border-left: 1px solid #cbd5e1;
+}
+.sqlmnger-limit-wrap label {
+	font-size: 11px;
+	font-weight: 700;
+	color: #64748b;
+}
+.sqlmnger-limit-sel {
+	height: 22px;
+	border: 1px solid #cbd5e1;
+	border-radius: 3px;
+	padding: 0 2px;
+	font-size: 12px;
+	background: #fff;
+	color: #0f172a;
+	min-width: 64px;
+}
+.sqlmnger-limit-sel:focus {
+	outline: none;
+	border-color: #2563eb;
+}
+
+/* 底部分页栏 */
+.sqlmnger-pager {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 2px 8px;
+	min-height: 28px;
+	border-top: 1px solid var(--x-border, #e2e8f0);
+	background: var(--x-statusbar-bg, #fafafa);
+	font-size: 12px;
+	color: #475569;
+	box-sizing: border-box;
+	flex-wrap: wrap;
+}
+.sqlmnger-pager-range {
+	font-variant-numeric: tabular-nums;
+	color: #334155;
+	font-weight: 500;
+}
+.sqlmnger-pager-nav {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
+}
+.sqlmnger-pager-page {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin: 0 4px;
+	white-space: nowrap;
+}
+.sqlmnger-pager-inp {
+	width: 48px;
+	height: 22px;
+	box-sizing: border-box;
+	border: 1px solid #cbd5e1;
+	border-radius: 3px;
+	padding: 0 3px;
+	text-align: center;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+.sqlmnger-pager-inp:focus {
+	outline: none;
+	border-color: #2563eb;
+}
+.sqlmnger-pager .sqlmnger-tp-btn {
+	height: 22px;
+	min-width: 24px;
+	padding: 0 5px;
+	font-size: 11px;
+}
+.sqlmnger-pager .sqlmnger-tp-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* SQL 命令页 */
+.sqlmnger-sql-page {
+	background: var(--x-bg, #f5f5f7);
+}
+.sqlmnger-sql-export-wrap {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: 4px;
+	position: relative;
+}
+.sqlmnger-sql-export-wrap.is-disabled {
+	opacity: 0.55;
+	pointer-events: none;
+}
+.sqlmnger-sql-export-fmt {
+	height: 26px;
+	border: 1px solid #cbd5e1;
+	border-radius: 4px;
+	font-size: 12px;
+	padding: 0 4px;
+	font-family: inherit;
+	background: #fff;
+}
+/* SQL 页导出菜单：向下展开（顶栏） */
+.sqlmnger-sql-export-wrap .sqlmnger-export-dd-menu {
+	top: 100%;
+	bottom: auto;
+	margin-top: 4px;
+	margin-bottom: 0;
+}
+.sqlmnger-sql-editor-wrap {
+	flex: 0 0 auto;
+	padding: 8px 10px 0;
+	min-height: 120px;
+	max-height: 40%;
+	display: flex;
+	flex-direction: column;
+}
+.sqlmnger-sql-editor {
+	flex: 1;
+	min-height: 100px;
+	width: 100%;
+	box-sizing: border-box;
+	border: 1px solid #cbd5e1;
+	border-radius: 6px;
+	padding: 8px 10px;
+	font: 13px/1.45 Consolas, "Courier New", monospace;
+	resize: vertical;
+	background: #fff;
+}
+.sqlmnger-sql-editor:focus {
+	outline: none;
+	border-color: #2563eb;
+	box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+.sqlmnger-sql-result {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	margin: 8px 10px 10px;
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	background: #fff;
+	overflow: hidden;
+}
+.sqlmnger-sql-result-empty,
+.sqlmnger-sql-exec-ok,
+.sqlmnger-sql-exec-err {
+	padding: 16px;
+	font-size: 13px;
+	color: #64748b;
+}
+.sqlmnger-sql-exec-ok {
+	color: #15803d;
+	background: #f0fdf4;
+}
+.sqlmnger-sql-exec-err {
+	color: #b91c1c;
+	background: #fef2f2;
+	white-space: pre-wrap;
+}
+
+/* 多语句批量结果 */
+.sqlmnger-sql-result.is-batch {
+	overflow: auto;
+}
+.sqlmnger-sql-batch-sum {
+	flex-shrink: 0;
+	padding: 10px 14px;
+	font-size: 13px;
+	border-bottom: 1px solid #e2e8f0;
+}
+.sqlmnger-sql-batch-sum.is-ok {
+	color: #15803d;
+	background: #f0fdf4;
+}
+.sqlmnger-sql-batch-sum.is-fail {
+	color: #b91c1c;
+	background: #fef2f2;
+}
+.sqlmnger-sql-batch-list {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 10px;
+}
+.sqlmnger-sql-batch-item {
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	background: #fff;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+}
+.sqlmnger-sql-batch-item.is-err {
+	border-color: #fecaca;
+}
+.sqlmnger-sql-batch-hd {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	background: #f8fafc;
+	border-bottom: 1px solid #e2e8f0;
+	font-size: 12px;
+	min-width: 0;
+}
+.sqlmnger-sql-batch-badge {
+	flex-shrink: 0;
+	font-weight: 600;
+	padding: 1px 6px;
+	border-radius: 4px;
+	font-size: 11px;
+}
+.sqlmnger-sql-batch-badge.ok {
+	color: #15803d;
+	background: #dcfce7;
+}
+.sqlmnger-sql-batch-badge.err {
+	color: #b91c1c;
+	background: #fee2e2;
+}
+.sqlmnger-sql-batch-meta {
+	flex-shrink: 0;
+	color: #64748b;
+}
+.sqlmnger-sql-batch-preview {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: #334155;
+	font-family: Consolas, "Courier New", monospace;
+}
+.sqlmnger-sql-batch-grid {
+	height: 220px;
+	min-height: 160px;
+	display: flex;
+	flex-direction: column;
+}
+/* 结构页 DDL / SHOW CREATE：白底 + 少量点缀色 */
+.sqlmnger-struct-ddl {
+	margin: 8px 0 16px;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	background: #fff;
+	overflow: hidden;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.sqlmnger-struct-ddl-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 10px;
+	background: #f8fafc;
+	border-bottom: 1px solid #e2e8f0;
+}
+.sqlmnger-struct-ddl-bar .sqlmnger-tp-btn {
+	background: #fff;
+	border: 1px solid #cbd5e1;
+	color: #334155;
+}
+.sqlmnger-struct-ddl-bar .sqlmnger-tp-btn:hover {
+	background: #f1f5f9;
+	border-color: #94a3b8;
+	color: #0f172a;
+}
+.sqlmnger-struct-ddl-bar .sqlmnger-tp-btn i {
+	color: #0d9488;
+}
+.sqlmnger-struct-ddl-pre {
+	margin: 0;
+	padding: 12px 14px;
+	max-height: 280px;
+	overflow: auto;
+	font-size: 12px;
+	line-height: 1.5;
+	color: #1e293b;
+	background: #fff;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.sqlmnger-sql-batch-exec {
+	padding: 10px 14px;
+}
+
+/* 新建表弹窗 */
+.sqlmnger-ct-body {
+	font-size: 13px;
+}
+.sqlmnger-ct-table {
+	width: 100%;
+	table-layout: fixed;
+}
+.sqlmnger-ct-table .c-name-col { width: 18%; }
+.sqlmnger-ct-table .c-type-col { width: 24%; }
+.sqlmnger-ct-table .c-def-col { width: 22%; }
+.sqlmnger-ct-table .c-null-col,
+.sqlmnger-ct-table .c-pk-col { width: 10%; text-align: center; }
+.sqlmnger-ct-table .c-act-col { width: 8%; }
+.sqlmnger-ct-table .c-type-cell,
+.sqlmnger-ct-table .c-def-cell {
+	overflow: visible;
+	padding: 2px 4px;
+	vertical-align: middle;
+}
+.sqlmnger-ct-table .c-type-host,
+.sqlmnger-ct-table .c-def-host,
+.sqlmnger-ct-table .c-type-host.sqlmnger-combo,
+.sqlmnger-ct-table .c-def-host.sqlmnger-combo {
+	display: block;
+	width: 100%;
+	min-height: 28px;
+}
+.sqlmnger-ct-table .sqlmnger-combo-input {
+	width: 100%;
+	min-width: 0 !important;
+	height: 28px !important;
+	font-size: 12px;
+	padding: 0 22px 0 6px !important;
+	box-sizing: border-box;
+}
+.sqlmnger-ct-table .sqlmnger-combo-list {
+	z-index: 10080;
+	max-height: 200px;
+	font-size: 12px;
+}
+.sqlmnger-ct-table .sqlmnger-combo-item {
+	height: 24px;
+	line-height: 24px;
+	padding: 0 8px;
+	font-size: 12px;
+}
+.sqlmnger-ct-table .c-name-cell .sqlmnger-input {
+	width: 100%;
+	height: 28px;
+	font-size: 12px;
+	box-sizing: border-box;
+}
+/* 创建数据库弹窗 */
+.sqlmnger-cdb-win .xwin-bd {
+	background: #fff;
+}
+.sqlmnger-cdb-win .xwin-bbr.sqlmnger-cdb-bbr,
+.sqlmnger-cdb-bbr {
+	justify-content: flex-end;
+	gap: 8px;
+	height: auto;
+	min-height: 44px;
+	padding: 8px 12px;
+	background: #f8fafc;
+}
+.sqlmnger-createdb-body {
+	font-size: 13px;
+	box-sizing: border-box;
+}
+.sqlmnger-cdb-form {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.sqlmnger-cdb-field {
+	display: grid;
+	grid-template-columns: 84px 1fr;
+	align-items: center;
+	gap: 10px 12px;
+}
+.sqlmnger-cdb-field label {
+	margin: 0;
+	font-weight: 600;
+	font-size: 13px;
+	color: #334155;
+	text-align: right;
+	line-height: 1.3;
+}
+.sqlmnger-cdb-field .sqlmnger-input,
+.sqlmnger-cdb-field .sqlmnger-select {
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+}
+.sqlmnger-select {
+	height: 36px;
+	padding: 0 32px 0 10px;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	font-size: 14px;
+	outline: none;
+	background-color: #fff;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2364748b' d='M1.4.6L6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 12px center;
+	background-size: 10px 7px;
+	-webkit-appearance: none;
+	-moz-appearance: none;
+	appearance: none;
+	color: #0f172a;
+	cursor: pointer;
+	transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sqlmnger-select:hover {
+	border-color: #94a3b8;
+}
+.sqlmnger-select:focus {
+	border-color: #2563eb;
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.sqlmnger-cdb-hint {
+	margin: 0;
+	padding: 8px 10px;
+	font-size: 12px;
+	line-height: 1.5;
+	color: #64748b;
+	background: #f1f5f9;
+	border-radius: 6px;
+}
+.sqlmnger-cdb-msg {
+	font-size: 12px;
+	color: #64748b;
+	min-height: 18px;
+	line-height: 1.4;
+}
+.sqlmnger-cdb-msg.is-ok { color: #16a34a; }
+.sqlmnger-cdb-msg.is-err { color: #dc2626; }
+.sqlmnger-cdb-msg.is-info { color: #2563eb; }
+.sqlmnger-ct-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 10px;
+}
+.sqlmnger-ct-row label {
+	width: 48px;
+	font-weight: 600;
+	color: #334155;
+}
+.sqlmnger-ct-row .sqlmnger-input {
+	flex: 1;
+}
+.sqlmnger-ct-hint {
+	font-size: 12px;
+	color: #64748b;
+	margin-bottom: 6px;
+}
+.sqlmnger-ct-table {
+	width: 100%;
+	border-collapse: collapse;
+	margin-bottom: 8px;
+}
+.sqlmnger-ct-table th,
+.sqlmnger-ct-table td {
+	border: 1px solid #e2e8f0;
+	padding: 4px 6px;
+	text-align: left;
+}
+.sqlmnger-ct-table th {
+	background: #f8fafc;
+	font-size: 12px;
+}
+.sqlmnger-ct-table .sqlmnger-input {
+	width: 100%;
+	box-sizing: border-box;
+	height: 26px;
+	font-size: 12px;
+}
+.sqlmnger-ct-table .c-center {
+	text-align: center;
+}
+.sqlmnger-ct-actions-row {
+	margin-bottom: 10px;
+}
+.sqlmnger-ct-preview-lab {
+	font-size: 12px;
+	font-weight: 600;
+	color: #475569;
+	margin-bottom: 4px;
+}
+.sqlmnger-ct-preview {
+	margin: 0 0 8px;
+	padding: 10px 12px;
+	background: #fff;
+	color: #1e293b;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	font: 12px/1.5 Consolas, "Courier New", monospace;
+	white-space: pre-wrap;
+	max-height: 140px;
+	overflow: auto;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.sqlmnger-ct-msg {
+	font-size: 12px;
+	color: #64748b;
+	min-height: 18px;
+}
+.sqlmnger-ct-msg.is-ok { color: #16a34a; }
+.sqlmnger-ct-msg.is-err { color: #dc2626; }
+.sqlmnger-ct-msg.is-info { color: #2563eb; }
+
+.sqlmnger-tp-body {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* Grid 列筛选行 */
+.xvr-filter-row {
+	flex-shrink: 0;
+}
+.xvr-filter-row.has-filter {
+	background: #eff6ff !important;
+}
+.xvr-filter-cell {
+	display: flex;
+	align-items: center;
+	background: transparent;
+}
+.xvr-filter-inp {
+	width: 100%;
+	height: 22px;
+	box-sizing: border-box;
+	border: 1px solid #cbd5e1;
+	border-radius: 3px;
+	padding: 0 4px;
+	font-size: 12px;
+	font-family: inherit;
+	background: #fff;
+	color: #0f172a;
+	min-width: 0;
+}
+.xvr-filter-inp:focus {
+	outline: none;
+	border-color: #2563eb;
+	box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.25);
+}
+.xvr-filter-inp:not(:placeholder-shown) {
+	background: #fef9c3;
+	border-color: #eab308;
+}
+.xvr-filter-clear {
+	width: 100%;
+	height: 22px;
+	border: 1px solid #cbd5e1;
+	border-radius: 3px;
+	background: #fff;
+	cursor: pointer;
+	color: #64748b;
+	padding: 0;
+	font-size: 12px;
+	line-height: 1;
+}
+.xvr-filter-clear:hover {
+	background: #fee2e2;
+	color: #b91c1c;
+	border-color: #fca5a5;
+}
+
+/* 匹配文本高亮 */
+.xvr-row > span mark.xvr-hl,
+.xvr-hl {
+	background: #fde047;
+	color: inherit;
+	padding: 0 1px;
+	border-radius: 2px;
+	font-weight: 600;
+	box-shadow: inset 0 -1px 0 #eab308;
+}
+
+/* 底栏：左统计（共N行|显示行|用时…）→ 全列搜索 →（弹性空白）→ 扩展槽/导出 */
+.xvr-sb {
+	display: flex !important;
+	align-items: center;
+	justify-content: flex-start !important;
+	gap: 10px;
+	flex-wrap: wrap;
+	padding: 2px 8px;
+	min-height: 28px;
+	box-sizing: border-box;
+}
+.xvr-sb-l {
+	flex: 0 1 auto;
+	min-width: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+.xvr-sb-text {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+/* 紧挨统计文本右侧 */
+.xvr-sb-search {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+	padding: 0 2px;
+}
+.xvr-sb-search.is-on .xvr-gsearch-inp {
+	background: #fef9c3;
+	border-color: #eab308;
+}
+.xvr-gsearch-label {
+	font-size: 12px;
+	color: #64748b;
+	white-space: nowrap;
+}
+.xvr-gsearch-inp {
+	height: 24px;
+	width: 140px;
+	max-width: 22vw;
+	box-sizing: border-box;
+	border: 1px solid #cbd5e1;
+	border-radius: 4px;
+	padding: 0 8px;
+	font-size: 12px;
+	font-family: inherit;
+	background: #fff;
+	color: #0f172a;
+}
+.xvr-gsearch-inp:focus {
+	outline: none;
+	border-color: #2563eb;
+	box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.2);
+}
+.xvr-gsearch-clear {
+	height: 24px;
+	padding: 0 10px;
+	border: 1px solid #cbd5e1;
+	border-radius: 4px;
+	background: #fff;
+	font-size: 12px;
+	cursor: pointer;
+	color: #475569;
+	white-space: nowrap;
+}
+.xvr-gsearch-clear:hover {
+	background: #f1f5f9;
+	border-color: #94a3b8;
+}
+/* 右下扩展槽（导出） */
+.xvr-sb-extra {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+	margin-left: auto;
+	min-height: 24px;
+}
+.xvr-sb-extra:empty {
+	display: none;
+}
+/* 可选自定义右侧文案（共 N 行已并入左侧） */
+.xvr-sb-r {
+	flex: 0 0 auto;
+	margin-left: 0;
+	color: #64748b;
+	font-size: 12px;
+	white-space: nowrap;
+}
+.xvr-sb-r:empty {
+	display: none;
+}
+/* 无扩展内容时，若有自定义右侧文案则顶到右侧 */
+.xvr-sb-extra:empty + .xvr-sb-r:not(:empty) {
+	margin-left: auto;
+}
+.sqlmnger-tp-gridwrap {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	height: 100%;
+}
+.sqlmnger-tp-gridwrap > div {
+	flex: 1 !important;
+	min-height: 0 !important;
+	height: 100% !important;
+	width: 100%;
+}
+/* 表体滚动；表头用 transform 跟 scrollLeft（见 core.js _syncHdrScroll） */
+.xvr-sc {
+	overflow: auto !important;
+}
+.xvr-hdr-clip {
+	overflow: hidden !important;
+}
+/* 禁止 sticky，避免表头横向不跟滚 */
+.xvr-hdr-wrap {
+	position: relative !important;
+	top: auto !important;
+}
+/* 勾选行：整行浅蓝背景（优先于斑马纹） */
+.xvr-row.is-checked {
+	background: #dbeafe !important;
+}
+.xvr-row.is-checked.alt {
+	background: #dbeafe !important;
+}
+.xvr-row.is-checked:hover {
+	background: #bfdbfe !important;
+}
+.xvr-row.is-checked > span {
+	background: transparent;
+}
+.xvr-row.is-checked > span.xvr-dirty {
+	background: #fde047 !important;
+}
+.xvr-row > span.xvr-dirty {
+	background: #fde047 !important;
+	box-shadow: inset 0 0 0 2px #ca8a04 !important;
+}
+.xvr-row > span.xvr-dirty::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 0;
+	height: 0;
+	border-style: solid;
+	border-width: 0 10px 10px 0;
+	border-color: transparent #ca8a04 transparent transparent;
+	z-index: 2;
+}
+.xvr-row > span {
+	position: relative;
+}
+
+/* 结构页（显示结构 / 修改表） */
+.sqlmnger-struct {
+	flex: 1;
+	overflow: auto;
+	padding: 12px 16px 24px;
+	box-sizing: border-box;
+	background: #fff;
+}
+.sqlmnger-struct-hd {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px 16px;
+	margin-bottom: 10px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid #e2e8f0;
+}
+.sqlmnger-struct-title {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 700;
+	color: #0f172a;
+}
+.sqlmnger-struct-title b {
+	font-weight: 700;
+}
+.sqlmnger-struct-links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 14px;
+	font-size: 13px;
+}
+.sqlmnger-struct-links a {
+	color: #2563eb;
+	text-decoration: none;
+	padding: 2px 0;
+}
+.sqlmnger-struct-links a:hover {
+	text-decoration: underline;
+}
+.sqlmnger-struct-links a.is-on {
+	font-weight: 700;
+	color: #1e3a8a;
+	text-decoration: underline;
+}
+.sqlmnger-struct-sec,
+.sqlmnger-struct h3 {
+	margin: 16px 0 8px;
+	font-size: 14px;
+	font-weight: 700;
+	color: #1e293b;
+}
+.sqlmnger-struct-table {
+	border-collapse: collapse;
+	width: auto;
+	max-width: 100%;
+	font-size: 13px;
+	margin-bottom: 12px;
+	background: #fff;
+}
+.sqlmnger-struct-table th,
+.sqlmnger-struct-table td {
+	border: 1px solid #c7d2fe;
+	padding: 5px 10px;
+	text-align: left;
+	vertical-align: middle;
+}
+.sqlmnger-struct-table th {
+	background: #e0e7ff;
+	color: #312e81;
+	font-weight: 600;
+}
+/* 显示结构：紧凑表 */
+.sqlmnger-struct-compact {
+	font-size: 13px;
+}
+.sqlmnger-struct-compact th,
+.sqlmnger-struct-compact td {
+	padding: 4px 10px;
+	border-color: #cbd5e1;
+}
+.sqlmnger-struct-compact th {
+	background: #e0e7ff;
+}
+.sqlmnger-struct-compact tbody tr:nth-child(even) {
+	background: #f8fafc;
+}
+.sqlmnger-struct-compact tr.is-pk .c-name {
+	background: #f1f5f9;
+}
+.sqlmnger-struct-compact .c-name {
+	font-weight: 600;
+	white-space: nowrap;
+}
+.sqlmnger-struct-compact .c-type {
+	font-family: ui-monospace, Consolas, monospace;
+	font-size: 12px;
+	color: #334155;
+}
+.sqlmnger-struct-compact .c-def {
+	font-family: ui-monospace, Consolas, monospace;
+	font-size: 12px;
+	color: #475569;
+	max-width: 180px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.sqlmnger-struct-compact .c-idx-flag {
+	white-space: nowrap;
+	text-align: center;
+	font-size: 12px;
+}
+.sqlmnger-struct-compact .c-cmt {
+	min-width: 80px;
+	color: #64748b;
+}
+.sqlmnger-type-extra {
+	color: #64748b;
+	font-size: 12px;
+	font-family: inherit;
+}
+.sqlmnger-idx-yes {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	color: #1d4ed8;
+	background: #dbeafe;
+	padding: 1px 6px;
+	border-radius: 3px;
+}
+.sqlmnger-struct-idx .pk-idx {
+	font-weight: 700;
+	color: #0f172a;
+	background: #e2e8f0;
+	padding: 1px 6px;
+	border-radius: 3px;
+	font-size: 12px;
+}
+.sqlmnger-struct-table .pk {
+	color: #b45309;
+	font-size: 11px;
+	font-weight: 700;
+}
+.sqlmnger-struct-foot {
+	margin-top: 12px;
+}
+/* VirtualGrid 状态栏：筛选开关 */
+.xvr-filter-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	border: 1px solid #cbd5e1;
+	background: #fff;
+	color: #475569;
+	font-size: 12px;
+	height: 24px;
+	padding: 0 8px;
+	border-radius: 4px;
+	cursor: pointer;
+	line-height: 1;
+}
+.xvr-filter-toggle:hover {
+	border-color: #94a3b8;
+	color: #0f172a;
+	background: #f8fafc;
+}
+.xvr-filter-toggle.is-on {
+	border-color: #2563eb;
+	background: #eff6ff;
+	color: #1d4ed8;
+	font-weight: 600;
+}
+.xvr-filter-toggle.has-filter:not(.is-on) {
+	border-color: #f59e0b;
+	color: #b45309;
+}
+.xvr-filter-toggle i {
+	font-size: 11px;
+}
+
+/* 修改表：宽表可编辑 + 拖拽排序 + 提交栏 */
+.sqlmnger-alter-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin: 0 0 12px;
+	padding: 8px 10px;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+}
+.sqlmnger-alter-dirty {
+	font-size: 12px;
+	color: #94a3b8;
+}
+.sqlmnger-alter-dirty.is-dirty {
+	color: #b45309;
+	font-weight: 600;
+}
+.sqlmnger-struct-edit {
+	width: 100%;
+	font-size: 12px;
+	table-layout: fixed;
+}
+.sqlmnger-struct-edit th,
+.sqlmnger-struct-edit td {
+	border-color: #e2e8f0;
+	/* 紧凑：控件铺满单元格 */
+	padding: 0 !important;
+	height: 24px;
+	line-height: 24px;
+	vertical-align: middle;
+	overflow: hidden;
+}
+.sqlmnger-struct-edit th {
+	background: #f1f5f9;
+	color: #334155;
+	height: 26px;
+	line-height: 26px;
+	padding: 0 6px !important;
+	font-size: 12px;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* 改表：input 铺满单元格宽高、无边框 */
+.sqlmnger-struct-edit .sqlmnger-input {
+	display: block;
+	width: 100%;
+	height: 100%;
+	min-height: 24px;
+	box-sizing: border-box;
+	font-size: 12px;
+	line-height: 24px;
+	padding: 0 6px;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	margin: 0;
+}
+.sqlmnger-struct-edit .sqlmnger-input:focus {
+	border: none;
+	outline: none;
+	box-shadow: none;
+	background: #fff;
+}
+.sqlmnger-struct-edit .sqlmnger-input:hover {
+	background: rgba(255, 255, 255, 0.65);
+}
+/* 列名：input 铺满 + 状态角标叠右侧 */
+.sqlmnger-struct-edit .c-name-cell {
+	position: relative;
+	padding: 0 !important;
+}
+.sqlmnger-struct-edit .c-name-cell .sqlmnger-input {
+	padding-right: 28px;
+}
+.sqlmnger-struct-edit .c-name-cell .col-status-badge {
+	position: absolute;
+	right: 3px;
+	top: 50%;
+	transform: translateY(-50%);
+	margin: 0;
+	pointer-events: none;
+}
+/* 列宽：Null / 键 尽量窄 */
+.sqlmnger-struct-edit .c-drag { width: 26px; }
+.sqlmnger-struct-edit .c-idx { width: 28px; }
+.sqlmnger-struct-edit .c-null-col,
+.sqlmnger-struct-edit .c-null-cell {
+	width: 36px !important;
+	max-width: 36px;
+	text-align: center;
+	overflow: hidden;
+	font-size: 11px;
+}
+.sqlmnger-struct-edit .c-key {
+	width: 36px !important;
+	max-width: 36px;
+	padding: 0 2px !important;
+	white-space: nowrap;
+	text-align: center;
+	overflow: hidden;
+	font-size: 11px;
+}
+.sqlmnger-struct-edit .c-type-col,
+.sqlmnger-struct-edit .c-type-cell {
+	width: 18%;
+	min-width: 100px;
+}
+.sqlmnger-struct-edit .c-def-col,
+.sqlmnger-struct-edit .c-def-cell {
+	width: 16%;
+	min-width: 90px;
+}
+.sqlmnger-struct-edit .c-act-col,
+.sqlmnger-struct-edit .c-act {
+	width: 56px;
+	text-align: center;
+	white-space: nowrap;
+}
+
+/* 类型 / 默认 combobox 铺满单元格 */
+.sqlmnger-struct-edit .c-type-cell,
+.sqlmnger-struct-edit .c-def-cell {
+	overflow: visible; /* 下拉不被裁切 */
+}
+.sqlmnger-struct-edit .col-type-host,
+.sqlmnger-struct-edit .col-type-host.sqlmnger-combo,
+.sqlmnger-struct-edit .col-def-host,
+.sqlmnger-struct-edit .col-def-host.sqlmnger-combo {
+	display: block;
+	width: 100%;
+	height: 100%;
+	min-height: 24px;
+}
+.sqlmnger-struct-edit .sqlmnger-combo-inner {
+	height: 100%;
+	min-height: 24px;
+}
+.sqlmnger-struct-edit .sqlmnger-combo-input {
+	width: 100%;
+	height: 100% !important;
+	min-height: 24px;
+	min-width: 0 !important;
+	border: none !important;
+	border-radius: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	padding: 0 20px 0 6px !important;
+	font-size: 12px;
+	line-height: 24px;
+}
+.sqlmnger-struct-edit .sqlmnger-combo-input:focus {
+	background: #fff !important;
+}
+.sqlmnger-struct-edit .sqlmnger-combo-caret {
+	width: 18px;
+	font-size: 10px;
+	color: #94a3b8;
+}
+.sqlmnger-struct-edit .sqlmnger-combo-list {
+	font-size: 12px;
+	max-height: 200px;
+	padding: 2px 0;
+	z-index: 10060;
+}
+/* 下拉项高度与单元格/input 一致（24px） */
+.sqlmnger-struct-edit .sqlmnger-combo-item {
+	height: 24px;
+	line-height: 24px;
+	padding: 0 8px;
+	font-size: 12px;
+	box-sizing: border-box;
+}
+.sqlmnger-struct-edit .sqlmnger-combo-empty {
+	height: 24px;
+	line-height: 24px;
+	padding: 0 8px;
+	font-size: 12px;
+}
+.sqlmnger-struct-edit .c-key .pk {
+	display: inline-block;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1;
+	padding: 1px 4px;
+	border-radius: 2px;
+	background: #e0e7ff;
+	color: #312e81;
+	vertical-align: middle;
+}
+.sqlmnger-struct-edit .c-null-cell,
+.sqlmnger-struct-edit .c-center {
+	text-align: center;
+}
+.sqlmnger-struct-edit .c-null-cell input[type="checkbox"] {
+	margin: 0;
+	vertical-align: middle;
+}
+.sqlmnger-alter-cols .c-drag {
+	width: 28px;
+	text-align: center;
+	padding: 0 2px !important;
+	cursor: grab;
+	user-select: none;
+	-webkit-user-drag: element;
+}
+.sqlmnger-alter-cols .c-drag * {
+	pointer-events: none; /* 拖拽命中整格，含新增行 */
+}
+.sqlmnger-drag-handle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	color: #64748b;
+	cursor: grab;
+	border-radius: 3px;
+	font-size: 11px;
+}
+.sqlmnger-alter-cols .c-drag:hover .sqlmnger-drag-handle,
+.sqlmnger-drag-handle:hover {
+	color: #2563eb;
+	background: #eff6ff;
+}
+.sqlmnger-alter-cols .c-drag:active {
+	cursor: grabbing;
+}
+/* 新增行同样显示可拖手柄 */
+.sqlmnger-alter-cols tr.is-new .c-drag .sqlmnger-drag-handle {
+	color: #16a34a;
+}
+.sqlmnger-alter-cols tr.is-dragging {
+	opacity: 0.45;
+}
+.sqlmnger-alter-cols tr.drag-over {
+	outline: 2px solid #2563eb;
+	outline-offset: -2px;
+	background: #eff6ff;
+}
+.sqlmnger-alter-cols tr.is-new {
+	background: #ecfdf5;
+}
+.sqlmnger-alter-cols tr.is-mod {
+	background: #fffbeb;
+}
+.sqlmnger-alter-cols tr.is-moved {
+	background: #eff6ff;
+}
+.sqlmnger-alter-cols tr.is-changed td:first-child {
+	box-shadow: inset 3px 0 0 #f59e0b;
+}
+.sqlmnger-alter-cols tr.is-new td:first-child {
+	box-shadow: inset 3px 0 0 #16a34a;
+}
+.sqlmnger-alter-cols tr.is-mod td:first-child {
+	box-shadow: inset 3px 0 0 #d97706;
+}
+.sqlmnger-alter-cols tr.is-moved td:first-child {
+	box-shadow: inset 3px 0 0 #2563eb;
+}
+.sqlmnger-alter-cols td.cell-dirty {
+	background: #fef3c7 !important;
+}
+.sqlmnger-alter-cols td.cell-dirty .sqlmnger-input {
+	background: #fffbeb;
+	border: none;
+	box-shadow: none;
+}
+.sqlmnger-alter-cols .col-status-badge {
+	display: inline-block;
+	min-width: 1em;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1;
+	padding: 1px 4px;
+	border-radius: 2px;
+	vertical-align: middle;
+	margin-left: 2px;
+}
+/* 操作列按钮与行高一致 */
+.sqlmnger-alter-cols .c-act .sqlmnger-tp-btn {
+	height: 20px;
+	min-height: 20px;
+	padding: 0 5px;
+	font-size: 11px;
+	line-height: 1;
+	vertical-align: middle;
+}
+.sqlmnger-alter-cols .c-center input[type="checkbox"] {
+	margin: 0;
+	vertical-align: middle;
+}
+.sqlmnger-alter-cols .col-status-badge.is-new {
+	background: #bbf7d0;
+	color: #166534;
+}
+.sqlmnger-alter-cols .col-status-badge.is-mod {
+	background: #fde68a;
+	color: #92400e;
+}
+.sqlmnger-alter-cols .col-status-badge.is-moved {
+	background: #bfdbfe;
+	color: #1e40af;
+}
+.sqlmnger-alter-cols .c-idx {
+	width: 32px;
+	text-align: center;
+	color: #64748b;
+}
+.sqlmnger-alter-cols .c-center {
+	text-align: center;
+}
+.sqlmnger-alter-cols .c-act {
+	white-space: nowrap;
+}
+.sqlmnger-alter-cols .alter-add-below {
+	padding: 0 5px !important;
+	min-height: 20px;
+	height: 20px;
+	color: #2563eb;
+}
+.sqlmnger-alter-cols .alter-add-below:hover {
+	background: #eff6ff;
+}
+.sqlmnger-alter-legend {
+	margin-left: auto;
+	font-size: 11px;
+	color: #64748b;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+.sqlmnger-alter-legend .lg {
+	display: inline-block;
+	font-weight: 700;
+	padding: 0 5px;
+	border-radius: 3px;
+	font-size: 11px;
+}
+.sqlmnger-alter-legend .lg.is-new {
+	background: #bbf7d0;
+	color: #166534;
+}
+.sqlmnger-alter-legend .lg.is-mod {
+	background: #fde68a;
+	color: #92400e;
+}
+.sqlmnger-alter-legend .lg.is-moved {
+	background: #bfdbfe;
+	color: #1e40af;
+}
+.sqlmnger-struct-sec .sqlmnger-struct-note {
+	font-weight: 400;
+	margin-left: 8px;
+}
+.sqlmnger-idx-form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin: 8px 0 16px;
+}
+.sqlmnger-idx-form .sqlmnger-input {
+	width: auto;
+	min-width: 120px;
+	height: 28px;
+}
+.sqlmnger-struct-note {
+	color: #94a3b8;
+	font-size: 12px;
+	margin-bottom: 12px;
+}
