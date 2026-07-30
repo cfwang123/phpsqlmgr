@@ -26,7 +26,6 @@ function asset_url($rel) {
 	<link rel="apple-touch-icon" href="<?php echo asset_url('assets/favicon-48.png'); ?>">
 	<link rel="stylesheet" href="<?php echo asset_url('assets/xui/classic.css'); ?>">
 	<link rel="stylesheet" href="<?php echo asset_url('assets/xui/fonts/fontawesome/css/all.min.css'); ?>">
-	<link rel="stylesheet" href="<?php echo asset_url('assets/xui/fonts/iconfont/iconfont.css'); ?>">
 	<link rel="stylesheet" href="<?php echo asset_url('assets/css/sqlmnger.css'); ?>">
 </head>
 <body>
