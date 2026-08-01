@@ -6,19 +6,28 @@
  */
 require_once __DIR__ . '/_bootstrap.php';
 
+// 启动页会立刻打本接口：必须快返回。读完 session 立即释放文件锁，
+// 避免与 auth_login 连库（可数十秒）互相阻塞导致前端白屏 2 分钟。
+@set_time_limit(15);
 sqlmnger_session_start();
 sqlmnger_conns_init();
 
 $cfg = sqlmnger_config();
 $cid = sqlmnger_request_conn_id();
 $pub = ($cid !== '') ? sqlmnger_session_public($cid) : null;
+$activeCount = isset($_SESSION['sqlmnger_conns']) && is_array($_SESSION['sqlmnger_conns'])
+	? count($_SESSION['sqlmnger_conns']) : 0;
+$drivers = sqlmnger_enabled_drivers();
+
+// 本接口不再写 session，尽早放锁
+sqlmnger_session_close();
 
 sqlmnger_json_ok(array(
 	'logged_in' => ($pub !== null),
 	'conn_id' => $cid,
 	'c' => $cid,
 	'connection' => $pub,
-	'drivers' => sqlmnger_enabled_drivers(),
+	'drivers' => $drivers,
 	'app' => array(
 		'name' => isset($cfg['app_name']) ? $cfg['app_name'] : 'sqlmnger',
 		'version' => isset($cfg['app_version']) ? $cfg['app_version'] : '',
@@ -39,5 +48,5 @@ sqlmnger_json_ok(array(
 		'vault' => function_exists('openssl_encrypt') ? 'aes-256-cbc' : 'hmac-xor-fallback',
 	),
 	// 当前 PHP Session 内仍存活的连接数（不含密码）
-	'active_conn_count' => count($_SESSION['sqlmnger_conns']),
+	'active_conn_count' => $activeCount,
 ));

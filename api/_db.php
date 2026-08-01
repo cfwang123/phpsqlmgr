@@ -34,6 +34,8 @@ function sqlmnger_session_conn_full() {
 		'password' => $pass,
 		'path' => isset($c['path']) ? $c['path'] : '',
 		'readonly' => !empty($c['readonly']),
+		'encrypt' => isset($c['encrypt']) ? $c['encrypt'] : '',
+		'tls' => !empty($c['tls']),
 	);
 }
 
@@ -181,6 +183,50 @@ function sqlmnger_open_handle($databaseOverride) {
 			'type' => 'tds',
 			'handle' => $client,
 			'driver' => 'mssql_tcp',
+			'database' => $db,
+			'tls' => $client->isTlsEnabled(),
+			'close' => function () use ($client) {
+				try {
+					$client->disconnect();
+				} catch (Exception $e) {
+					// ignore
+				}
+			},
+		);
+	}
+
+	// .NET CLI（SqlClient / Schannel，推荐 PHP 5.5 远程加密）
+	if ($driver === 'mssql_net') {
+		require_once __DIR__ . '/tds/MssqlNetClient.php';
+		$host = $c['host'] !== '' ? $c['host'] : '127.0.0.1';
+		$port = $c['port'] > 0 ? $c['port'] : 1433;
+		$cto = intval(sqlmnger_cfg('connect_timeout_sec', 8));
+		if ($cto < 1) {
+			$cto = 8;
+		}
+		$opts = array(
+			'encrypt' => sqlmnger_cfg('mssql_tcp_encrypt', 'auto'),
+			'trustServerCertificate' => sqlmnger_cfg('mssql_tcp_trust_server_certificate', true),
+		);
+		if (isset($c['encrypt']) && strval($c['encrypt']) !== '') {
+			$opts['encrypt'] = $c['encrypt'];
+		}
+		if (array_key_exists('trust_server_certificate', $c)) {
+			$opts['trustServerCertificate'] = !!$c['trust_server_certificate'];
+		}
+		$client = new SqlmngerMssqlNetClient();
+		$ok = $client->connect($host, $port, $c['user'], $c['password'], $db, $cto * 1000, $opts);
+		if (!$ok) {
+			$msg = $client->getLastError();
+			if ($msg === null || $msg === '') {
+				$msg = '.NET CLI 连接失败';
+			}
+			sqlmnger_json_err('CONNECT', '打开连接失败', 500, $msg);
+		}
+		return array(
+			'type' => 'tds', // 与 TdsClient 相同 execute 接口，复用 query/exec 路径
+			'handle' => $client,
+			'driver' => 'mssql_net',
 			'database' => $db,
 			'tls' => $client->isTlsEnabled(),
 			'close' => function () use ($client) {

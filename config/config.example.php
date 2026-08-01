@@ -8,11 +8,11 @@
  */
 return array(
 	'app_name' => 'sqlmnger',
-	'app_version' => '1.1.0',
+	'app_version' => '1.0.2',
 	'app_key' => 'PLEASE-CHANGE-TO-A-LONG-RANDOM-SECRET-32+',
 	'debug' => false,
 
-	'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp'),
+	'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp', 'mssql_net'),
 
 	'session_name' => 'SQLMNGERSESSID',
 	'session_ttl' => 604800,
@@ -39,7 +39,11 @@ return array(
 	'log_path' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'app.log',
 	'sql_require_danger_confirm' => true,
 
-	// mssql_tcp TLS（强制加密 SQL Server）
+	// mssql_tcp TLS：auto=优先纯 PHP TLS，失败可回退明文；require=必须 TLS；disable=明文
 	'mssql_tcp_encrypt' => 'auto', // auto | require | disable
 	'mssql_tcp_trust_server_certificate' => true,
+	// PureTLS 失败后再试 OpenSSL 流（默认关，避免远程「连接中」白等数秒）
+	'mssql_tcp_openssl_fallback' => false,
+	// mssql_net 常驻 CLI 空闲退出秒数
+	'mssql_net_idle_sec' => 10,
 );

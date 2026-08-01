@@ -30,6 +30,17 @@ if (empty($enabled[$driver]['available'])) {
 	sqlmnger_json_err('DRIVER_UNAVAILABLE', '当前 PHP 环境未启用该引擎扩展: ' . $enabled[$driver]['hint'], 400, null);
 }
 
+// encrypt：登录页「强制 SSL」→ require；未勾选可不传（用 config auto/disable）
+$encrypt = '';
+if (isset($body['encrypt']) && strval($body['encrypt']) !== '') {
+	$encrypt = strtolower(trim(strval($body['encrypt'])));
+} elseif (!empty($body['force_ssl']) || !empty($body['forceSsl'])) {
+	$encrypt = 'require';
+}
+if ($encrypt !== '' && $encrypt !== 'auto' && $encrypt !== 'require' && $encrypt !== 'disable') {
+	$encrypt = '';
+}
+
 $conn = array(
 	'driver' => $driver,
 	'host' => isset($body['host']) ? trim(strval($body['host'])) : '127.0.0.1',
@@ -40,6 +51,9 @@ $conn = array(
 	'path' => isset($body['path']) ? trim(strval($body['path'])) : '',
 	'readonly' => !empty($body['readonly']),
 );
+if ($encrypt !== '') {
+	$conn['encrypt'] = $encrypt;
+}
 
 if ($driver === 'mysql') {
 	if ($conn['host'] === '') {
@@ -49,7 +63,7 @@ if ($driver === 'mysql') {
 		$conn['port'] = 3306;
 	}
 }
-if ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
+if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 	if ($conn['host'] === '') {
 		$conn['host'] = '127.0.0.1';
 	}
@@ -59,7 +73,7 @@ if ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
 }
 
 // 空密码策略（仅网络库账号；SQLite 无密码）
-if (($driver === 'mysql' || $driver === 'sqlsrv' || $driver === 'mssql_tcp') && $conn['password'] === '') {
+if (($driver === 'mysql' || $driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') && $conn['password'] === '') {
 	if (!sqlmnger_cfg('allow_empty_password', true)) {
 		sqlmnger_login_rate_fail();
 		sqlmnger_json_err(
@@ -71,8 +85,14 @@ if (($driver === 'mysql' || $driver === 'sqlsrv' || $driver === 'mssql_tcp') && 
 	}
 }
 
+// 连库可能很慢（SQL Server TLS 等）：先放掉 session 文件锁，避免卡住其它 Tab 的 auth_me
+$connsEmpty = empty($_SESSION['sqlmnger_conns']) || count($_SESSION['sqlmnger_conns']) === 0;
+sqlmnger_session_close();
+
 $result = sqlmnger_try_connect($conn);
 if (empty($result['ok'])) {
+	sqlmnger_session_start();
+	sqlmnger_conns_init();
 	sqlmnger_login_rate_fail();
 	$cfg = sqlmnger_config();
 	$detail = !empty($cfg['debug']) ? $result['message'] : null;
@@ -88,8 +108,12 @@ if ($passEnc === false) {
 	sqlmnger_json_err('VAULT', '凭证加密失败', 500, null);
 }
 
+// 写回 session
+sqlmnger_session_start();
+sqlmnger_conns_init();
+
 // 仅在尚无任何连接时再生 session id，避免踢掉其它 Tab 的连接
-if (count($_SESSION['sqlmnger_conns']) === 0 && function_exists('session_regenerate_id')) {
+if ($connsEmpty && count($_SESSION['sqlmnger_conns']) === 0 && function_exists('session_regenerate_id')) {
 	@session_regenerate_id(true);
 }
 
@@ -102,6 +126,11 @@ if ($cid === '') {
 	$cid = sqlmnger_new_conn_id();
 }
 
+$tlsOn = !empty($result['tls']);
+// 仅 SQL Server TDS / .NET CLI 报告 TLS
+if ($driver !== 'mssql_tcp' && $driver !== 'mssql_net') {
+	$tlsOn = false;
+}
 $row = array(
 	'id' => $cid,
 	'driver' => $conn['driver'],
@@ -114,6 +143,8 @@ $row = array(
 	'readonly' => $conn['readonly'],
 	'server_version' => isset($result['server_version']) ? $result['server_version'] : '',
 	'logged_in_at' => date('c'),
+	'tls' => $tlsOn,
+	'encrypt' => isset($conn['encrypt']) ? $conn['encrypt'] : '',
 );
 sqlmnger_conn_set($cid, $row);
 
@@ -127,6 +158,8 @@ sqlmnger_audit('login', array(
 	'database' => $conn['database'],
 	'path' => $driver === 'sqlite' ? $conn['path'] : '',
 	'readonly' => !empty($conn['readonly']),
+	'tls' => $tlsOn,
+	'encrypt' => isset($conn['encrypt']) ? $conn['encrypt'] : '',
 	'conn_id' => $cid,
 ));
 

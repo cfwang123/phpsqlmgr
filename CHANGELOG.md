@@ -7,10 +7,16 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ---
 
-## [1.1.0] — 2026-07-31
+## [1.0.2] — 2026-08-01
 
 ### Added
 
+- **Driver `mssql_net`**: SQL Server via a **.NET Framework 4.8 helper CLI** (`bin/SqlmngerMsCli.exe`; source in `tools/SqlmngerMsCli/`). Uses `System.Data.SqlClient` + Schannel (TLS 1.2) — a good fit when PHP is old (5.5+) or its OpenSSL cannot do modern TLS.
+  - **Resident singleton TCP daemon**: `Local\` mutex keeps one process per machine; listens on `127.0.0.1` random port, writes port + PID to `storage/run/SqlmngerMsCli.port`; NDJSON protocol (`connect` / `query` / `close` / `quit` / `ping` / `shutdown`).
+  - **Spawn on demand**: PHP (`api/tds/MssqlNetClient.php`) probes the port file first and `ping`s; only starts the CLI (`start /B`, detached) when unreachable. Concurrent PHP requests share the same process.
+  - **Idle auto-exit**: process exits and removes the port file after `--idle` seconds (default **10**, config `mssql_net_idle_sec`) with no connected TCP client; PHP `disconnect` only closes its socket, never kills the daemon.
+  - **In-process connection pool**: `SqlConnection` cached per connection string across requests (`close` returns it to the pool).
+  - Login UI label: **SQL Server (.NET CLI)**; available on Windows hosts with .NET 4.8 only.
 - **Driver `mssql_tcp`**: pure PHP **TCP/TDS** SQL Server client (`api/tds/`), no `sqlsrv` extension required.
   - PRELOGIN + optional **TLS** (`mssql_tcp_encrypt`: `auto` | `require` | `disable`).
   - `mssql_tcp_trust_server_certificate` for self-signed / CN mismatch (common on LAN).
@@ -26,23 +32,6 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 - **Audit log** (optional): JSON lines to `log_path` when `log_operations` is true (login, SQL, structure changes; no passwords).
 - **Favicons**: `assets/favicon.ico` / `.svg` / PNG sizes + apple-touch-icon in `index.php`.
 - Frontend module `assets/js/sqlmnger.dbio.js` (`SqlmngerDbIO.openExport` / `openImport`).
-
-### Changed
-
-- Default `enabled_drivers` includes `mssql_tcp` alongside `mysql`, `sqlite`, `sqlsrv`.
-- Config sample defaults: larger table limit (`default_table_limit` 100000); `default_sql_limit` **0** (no auto LIMIT on SQL page unless set).
-- SQL page is no longer “single statement only”.
-
-### Docs
-
-- Updated `README.md`, `README.zh.md`, this changelog, `.gitignore`.
-
----
-
-## [1.0.3] — 2026-07-29
-
-### Added
-
 - **i18n**: Chinese / English / Japanese / Korean (`assets/js/sqlmnger.i18n.js`).
   - Language preference in `localStorage` (`sqlmnger_lang`).
   - **Dropdown** language selector on login and main title bar.
@@ -62,9 +51,15 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
   - ALTER only for **changed** columns (definition or relative order); unchanged columns skipped.
 - **Hash routing**: table mode in hash `m=struct` / `m=alter` (data omits `m`).
 - **Tabs**: title is `table` when all open tables share one database; `database.table` when multiple DBs are open.
+- New config `mssql_net_idle_sec` (default 10).
+- Expanded `.gitignore` for secrets, local data, and IDE noise.
 
 ### Changed
 
+- **Layout**: moved former `public/` contents (`index.php`, `api/`, `assets/`) to the **project root**. Document root is now the project root (no nested `public/` web root); `SQLMNGER_ROOT` resolves to the parent of `api/` (one level up).
+- Default `enabled_drivers` includes `mssql_tcp` and `mssql_net` alongside `mysql`, `sqlite`, `sqlsrv`.
+- Config sample defaults: larger table limit (`default_table_limit` 100000); `default_sql_limit` **0** (no auto LIMIT on SQL page unless set).
+- SQL page is no longer “single statement only”.
 - Closing the column filter row **clears all column filters** (global search kept).
 - Combobox: first open shows full list; filter/highlight only after typing.
 - Combobox caret click no longer flash-closes when the input is focused.
@@ -78,24 +73,7 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ### Docs
 
-- Updated `README.md`, `README.zh.md`, this changelog.
-
----
-
-## [1.0.2] — 2026-07-25
-
-### Changed
-
-- **Layout**: moved former `public/` contents (`index.php`, `api/`, `assets/`) to the **project root**. Document root is now the project root (no nested `public/` web root).
-- `SQLMNGER_ROOT` resolves to the parent of `api/` (one level up).
-
-### Added
-
-- `README.md` (English), `README.zh.md` (Chinese), this `CHANGELOG.md`.
-- Expanded `.gitignore` for secrets, local data, and IDE noise.
-
-### Docs
-
+- `README.md` (English), `README.zh.md` (Chinese), `tools/SqlmngerMsCli/README.md`, this changelog.
 - Updated `docs/ui-xui.md` and key paths in `docs/design-sqlmnger.md` for the new layout.
 
 ---
@@ -131,8 +109,6 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ---
 
-[1.1.0]: #110---2026-07-31
-[1.0.3]: #103---2026-07-29
-[1.0.2]: #102---2026-07-25
+[1.0.2]: #102---2026-08-01
 [1.0.1]: #101---2026-07-25
 [1.0.0]: #100---2026-07

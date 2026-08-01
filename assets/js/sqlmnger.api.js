@@ -87,16 +87,26 @@ window.SqlmngerApi = (function () {
 		} catch (e3) { /* ignore */ }
 	}
 
-	function get(path, query) {
+	/**
+	 * @param {string} path
+	 * @param {object} [query]
+	 * @param {object} [opts] { timeoutMs: number }
+	 */
+	function get(path, query, opts) {
 		query = query || {};
 		if (t.connId && query.c == null) query.c = t.connId;
 		var q = buildQuery(query);
 		var full = path;
 		if (q) full += (path.indexOf('?') >= 0 ? '&' : '?') + q;
-		return request('GET', full, null);
+		return request('GET', full, null, opts);
 	}
 
-	function post(path, body) {
+	/**
+	 * @param {string} path
+	 * @param {object} [body]
+	 * @param {object} [opts] { timeoutMs: number }
+	 */
+	function post(path, body, opts) {
 		body = body == null ? {} : body;
 		if (t.connId && (body.c == null || body.c === '')) {
 			body.c = t.connId;
@@ -106,15 +116,23 @@ window.SqlmngerApi = (function () {
 		if (t.connId) {
 			path2 += (path.indexOf('?') >= 0 ? '&' : '?') + 'c=' + encodeURIComponent(t.connId);
 		}
-		return request('POST', path2, body);
+		return request('POST', path2, body, opts);
 	}
 
-	function request(method, path, body) {
+	/**
+	 * @param {string} method
+	 * @param {string} path
+	 * @param {object|null} body
+	 * @param {object} [opts] { timeoutMs: number }
+	 */
+	function request(method, path, body, opts) {
+		opts = opts || {};
+		var timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : t.timeoutMs;
 		return new Promise(function (resolve, reject) {
 			var xhr = new XMLHttpRequest();
 			var url = joinUrl(t.baseUrl, path);
 			xhr.open(method, url, true);
-			xhr.timeout = t.timeoutMs;
+			xhr.timeout = timeoutMs > 0 ? timeoutMs : t.timeoutMs;
 			xhr.withCredentials = true;
 			xhr.setRequestHeader('Accept', 'application/json');
 			if (method !== 'GET' && method !== 'HEAD') {

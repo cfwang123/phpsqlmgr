@@ -294,7 +294,7 @@ function sqlmnger_sql_apply_row_limit($driver, $sql, $limit) {
 	if (!preg_match('/^\s*(SELECT|WITH)\b/i', ltrim($sql))) {
 		return $sql;
 	}
-	if ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
+	if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 		// SELECT / SELECT DISTINCT 后插入 TOP n（2000+ 兼容，不用 OFFSET）
 		$out = preg_replace(
 			'/^(\s*SELECT\s+)(DISTINCT\s+)?/i',

@@ -29,7 +29,7 @@ try {
 			$sql .= ' COLLATE ' . $collation;
 		}
 		sqlmnger_exec($h, $sql, array());
-	} elseif ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
+	} elseif ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 		$q = sqlmnger_ident_quote($driver, $name);
 		$sql = 'CREATE DATABASE ' . $q;
 		// SQL Server：COLLATE 放在库名后

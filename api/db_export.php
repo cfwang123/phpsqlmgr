@@ -288,7 +288,7 @@ function sqlmnger_export_show_create($h, $driver, $database, $table) {
 
 function sqlmnger_export_table_data_sql($h, $driver, $table, $dataMode) {
 	$qTable = sqlmnger_ident_quote($driver, $table);
-	if ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
+	if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 		$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
 	}
 	$sql = 'SELECT * FROM ' . $qTable;
@@ -487,7 +487,7 @@ function sqlmnger_db_export_delimited($h, $db, $tablesSpec, $options, $delim, $e
 		if (empty($ts['data'])) continue;
 		$name = $ts['name'];
 		$qTable = sqlmnger_ident_quote($driver, $name);
-		if ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
+		if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 			$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
 		}
 		$soft = intval(sqlmnger_cfg('unlimited_soft_max', 2000000));

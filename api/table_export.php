@@ -214,7 +214,7 @@ function sqlmnger_export_build_content($format, $driver, $db, $table, $cols, $ro
 		}
 		$buf .= '-- rows: ' . count($rows) . "\n\n";
 		$qTable = sqlmnger_ident_quote($driver, $table);
-		if ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
+		if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 			$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
 		}
 		$qCols = array();

@@ -2,7 +2,7 @@
 
 Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Adminer.
 
-**Version**: v1.1.0 · **Status**: runnable prototype / near-MVP
+**Version**: v1.0.2 · **Status**: runnable prototype / near-MVP
 
 > Chinese: [README.zh.md](README.zh.md) · Changes: [CHANGELOG.md](CHANGELOG.md)
 
@@ -10,7 +10,7 @@ Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Admi
 
 ## 1. Features
 
-1. **Three engines, four drivers** — MySQL · SQLite · SQL Server via the usual Microsoft PHP extension **or** a **pure-PHP SQL Server connector** (no extra extension to install).
+1. **Three engines, five drivers** — MySQL · SQLite · SQL Server via the usual Microsoft PHP extension, a **pure-PHP SQL Server connector**, **or** a **.NET helper CLI** on Windows (no PHP extension to install).
 2. **Zero Composer runtime** — plain PHP **≥ 5.5.12**, drop-in deploy; document root = project root.
 3. **SPA + all AJAX JSON** — login, tree, grid, SQL, import/export never full-page postback; credentials stay in a **server Session vault** (not in every request body after login).
 4. **Large-table friendly** — load many rows once, **VirtualGrid** paints only the viewport; inline dirty cells, Ctrl+Enter submit, client column filters.
@@ -39,6 +39,7 @@ Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Admi
   - SQLite — PDO SQLite (path jailed under `sqlite_root`)
   - SQL Server (extension) — Microsoft PHP SQL Server extension
   - SQL Server (pure PHP) — connection implemented in pure PHP (no Microsoft extension; optional encryption)
+  - SQL Server (.NET CLI) — Windows helper `bin/SqlmngerMsCli.exe` (.NET 4.8 SqlClient, Schannel TLS 1.2); resident singleton TCP daemon: PHP spawns it on demand, clients share one process, auto-exits after 10 s with no connection
 - **Multi-tab connections**: connection id in URL `?c=…`
 - **Database / table browse**: filterable DB combo + left tree (context menu: data / structure / alter)
 - **Hash routing**: restore active table, WHERE, sort, LIMIT, page, and **mode** (`m=struct` / `m=alter`)
@@ -134,7 +135,8 @@ cp config/config.example.php config/config.php
 | `debug` | Expose error detail on login fail |
 | `allow_empty_password` | Allow empty DB password (local dev) |
 | `session_ttl` | Cookie lifetime (default 7 days) |
-| `enabled_drivers` | MySQL / SQLite / SQL Server (extension) / SQL Server (pure PHP) |
+| `enabled_drivers` | MySQL / SQLite / SQL Server (extension) / SQL Server (pure PHP) / SQL Server (.NET CLI) |
+| `mssql_net_idle_sec` | .NET CLI daemon idle-exit seconds with no client (default 10) |
 | `sqlite_root` | SQLite path jail |
 | `default_table_limit` / `default_sql_limit` | Default row limits (`0` = unlimited / no auto LIMIT) |
 | `max_fetch_rows` / `unlimited_soft_max` | Caps |

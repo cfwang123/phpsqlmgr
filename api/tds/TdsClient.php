@@ -9,6 +9,8 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 
 	require_once __DIR__ . '/TdsPacket.php';
 	require_once __DIR__ . '/TdsTokens.php';
+	require_once __DIR__ . '/TdsTlsFilter.php';
+	require_once __DIR__ . '/PureTls10.php';
 
 	class SqlmngerTdsClient {
 		// PRELOGIN ENCRYPTION 取值（MS-TDS）
@@ -17,8 +19,12 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 		const ENCRYPT_NOT_SUP = 0x02;
 		const ENCRYPT_REQ = 0x03;
 
-		/** @var resource|null */
+		/** @var resource|null 应用层读写（明文 TDS；TLS 时为桥接流） */
 		private $stream = null;
+		/** @var resource|null 底层 TCP（TLS 时与 stream 分离） */
+		private $netStream = null;
+		/** @var SqlmngerTdsTlsBridge|null */
+		private $tlsBridge = null;
 		private $packetSize = 4096;
 		private $connected = false;
 		private $lastError = null;
@@ -30,6 +36,8 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 		private $encryptMode = 'auto';
 		/** @var bool 信任服务器证书（自签/内网常用） */
 		private $trustServerCertificate = true;
+		/** @var int 连接超时秒（TLS 握手共用） */
+		private $timeoutSec = 8;
 
 		public function isConnected() {
 			return $this->connected && is_resource($this->stream);
@@ -95,15 +103,55 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 			}
 
 			$timeoutSec = max(1, intval(ceil($timeoutMs / 1000.0)));
+			$this->timeoutSec = $timeoutSec;
 			$host = strval($host);
 			$port = intval($port);
 			if ($port <= 0) {
 				$port = 1433;
 			}
+
+			// 主路径
+			$ok = $this->connectOnce($host, $port, $user, $password, $database, $timeoutSec, false);
+			if ($ok) {
+				return true;
+			}
+
+			// auto：TLS/LOGIN 失败且服务器未强制加密时，回退明文（NOT_SUP）。
+			// 典型场景：旧环境 TLS 失败，但 Force Encryption=OFF 时仍可明文登录。
+			if ($this->encryptMode === 'auto') {
+				$prevErr = $this->lastError;
+				$okPlain = $this->connectOnce($host, $port, $user, $password, $database, $timeoutSec, true);
+				if ($okPlain) {
+					return true;
+				}
+				// 保留更有信息的错误（优先 TLS 相关）
+				if ($prevErr !== null && $prevErr !== '' &&
+					(strpos($prevErr, 'TLS') !== false || strpos($prevErr, '加密') !== false)) {
+					$this->lastError = $prevErr . '；明文回退亦失败: ' . $this->lastError;
+				}
+			}
+			return false;
+		}
+
+		/**
+		 * 单次 TCP + PRELOGIN + 可选 TLS + LOGIN7
+		 * @param string $host
+		 * @param int $port
+		 * @param string $user
+		 * @param string $password
+		 * @param string $database
+		 * @param int $timeoutSec
+		 * @param bool $forcePlain  true=按 disable 发 NOT_SUP 明文（auto 回退用）
+		 * @return bool
+		 */
+		private function connectOnce($host, $port, $user, $password, $database, $timeoutSec, $forcePlain) {
+			$this->disconnect();
+			$this->lastError = null;
+			$this->serverVersion = null;
+			$this->tlsEnabled = false;
 			$errno = 0;
 			$errstr = '';
 			$target = 'tcp://' . $host . ':' . $port;
-			// SSL 上下文在启用 crypto 前挂到 socket（peer 校验策略）
 			$ctx = stream_context_create(array(
 				'ssl' => $this->sslContextOptions($host),
 			));
@@ -123,9 +171,10 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 			if (function_exists('stream_set_blocking')) {
 				@stream_set_blocking($fp, true);
 			}
+			$this->netStream = $fp;
 			$this->stream = $fp;
 			try {
-				if (!$this->preloginAndMaybeTls($host)) {
+				if (!$this->preloginAndMaybeTls($host, $forcePlain)) {
 					$this->disconnect();
 					return false;
 				}
@@ -134,7 +183,6 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 					return false;
 				}
 				$this->connected = true;
-				// 会话选项
 				try {
 					$this->execute('SET ANSI_WARNINGS OFF');
 					$this->execute('SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED');
@@ -152,32 +200,56 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 		public function disconnect() {
 			$this->connected = false;
 			$this->tlsEnabled = false;
-			if (is_resource($this->stream)) {
-				// 若已 TLS，先尝试优雅关闭（忽略失败）
-				if (function_exists('stream_socket_enable_crypto')) {
-					@stream_socket_enable_crypto($this->stream, false);
-				}
+			// 先关应用桥接流
+			if (is_resource($this->stream) && $this->stream !== $this->netStream) {
 				@fclose($this->stream);
 			}
 			$this->stream = null;
+			if ($this->tlsBridge !== null) {
+				$this->tlsBridge->closeAll();
+				$this->tlsBridge = null;
+			}
+			if (is_resource($this->netStream)) {
+				@fclose($this->netStream);
+			}
+			$this->netStream = null;
 		}
 
 		/**
 		 * SSL 上下文（PHP 5.5+）
+		 * SQL Server 2008/R2 等旧实例不支持 SNI，开启常导致握手失败。
+		 *
+		 * 重要限制（实测 PHP 5.5.12 + OpenSSL 1.0.1g + SQL Server 2008 R2）：
+		 * PHP ext/openssl 在创建 SSL_CTX 时会执行
+		 *   ssl_ctx_options &= ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS
+		 * 即强制开启 BEAST 空分片。SQL Server Schannel 解密此类应用数据会
+		 * 静默无响应（握手能成功，LOGIN7 后无回包）。Microsoft 客户端
+		 * （sqlcmd -N / .NET Encrypt=true）用 Schannel，不受此影响。
+		 * 纯 PHP OpenSSL 路径在修复该 PHP 行为前，对 2008 R2 加密登录不可靠；
+		 * 未强制加密时请用 encrypt=disable 或 auto 在 NOT_SUP 场景走明文。
+		 *
 		 * @param string $peerName
 		 * @return array
 		 */
 		private function sslContextOptions($peerName) {
 			$trust = $this->trustServerCertificate;
+			$peerName = $peerName === null ? '' : strval($peerName);
+			$isIp = $peerName !== '' && filter_var($peerName, FILTER_VALIDATE_IP) !== false;
 			$opt = array(
 				'verify_peer' => !$trust,
 				'verify_peer_name' => !$trust,
 				'allow_self_signed' => $trust,
-				'SNI_enabled' => true,
+				// TDS 加密场景统一关闭 SNI（2008 R2 / 内网 IP / 主机名均更稳）
+				'SNI_enabled' => false,
 			);
-			// 严格校验时才绑定 peer 名称
-			if (!$trust && $peerName !== '' && $peerName !== null) {
+			if (!$trust && $peerName !== '' && !$isIp) {
 				$opt['peer_name'] = $peerName;
+			}
+			// OpenSSL 1.1+ 默认安全级别会禁 TLS1.0 / 弱套件；2008 R2 RTM 仅 TLS1.0
+			if (defined('OPENSSL_VERSION_NUMBER') && OPENSSL_VERSION_NUMBER >= 0x10100000) {
+				$opt['ciphers'] = 'DEFAULT@SECLEVEL=0';
+				// PHP 7.1+ 可设 security_level（需编译进 openssl）
+				$opt['security_level'] = 0;
 			}
 			return $opt;
 		}
@@ -185,28 +257,32 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 		/**
 		 * PRELOGIN + 按需 TLS 握手（MS-TDS：在 LOGIN7 之前升级加密）
 		 * @param string $host
+		 * @param bool $forcePlain  true 时强制 NOT_SUP 明文（auto 回退）
 		 * @return bool
 		 */
-		private function preloginAndMaybeTls($host) {
-			// 客户端声明的加密能力
-			if ($this->encryptMode === 'disable') {
+		private function preloginAndMaybeTls($host, $forcePlain = false) {
+			// 客户端 ENCRYPTION 声明（MS-TDS）：
+			// - disable / forcePlain → NOT_SUP（明文；服务器若强制加密会失败）
+			// - auto / require      → ON（协商加密并走 TLS）
+			//
+			// 实测 SQL Server 2008 R2：
+			// - client OFF + server OFF：明文 LOGIN 被掐断；TLS 握手可成功但 LOGIN7 仍失败
+			// - client ON  + server ON ：TLS + LOGIN7 正常
+			// 故 auto 首次也发 ON；失败时 connect() 再以 forcePlain=NOT_SUP 回退明文。
+			if ($forcePlain || $this->encryptMode === 'disable') {
 				$clientEnc = self::ENCRYPT_NOT_SUP;
 			} else {
-				// auto / require：声明支持并希望加密
+				// auto / require：希望加密
 				$clientEnc = self::ENCRYPT_ON;
 			}
 
-			if ($clientEnc !== self::ENCRYPT_NOT_SUP && !function_exists('stream_socket_enable_crypto')) {
+			// 纯 PHP TLS（PureTls10）不依赖 openssl 扩展；仅 OpenSSL 流回退需要它。
+			// 无 stream_socket_enable_crypto 时仍可尝试纯 PHP 路径。
+			if ($clientEnc !== self::ENCRYPT_NOT_SUP
+				&& !function_exists('stream_socket_enable_crypto')
+				&& !class_exists('SqlmngerPureTlsBridge', false)) {
 				if ($this->encryptMode === 'require') {
-					$this->lastError = '当前 PHP 不支持 stream_socket_enable_crypto，无法 TLS 加密连接';
-					return false;
-				}
-				// auto：降级为不加密声明
-				$clientEnc = self::ENCRYPT_NOT_SUP;
-			}
-			if ($clientEnc !== self::ENCRYPT_NOT_SUP && !extension_loaded('openssl')) {
-				if ($this->encryptMode === 'require') {
-					$this->lastError = '缺少 openssl 扩展，无法 TLS 加密连接 SQL Server';
+					$this->lastError = '当前 PHP 无法 TLS 加密连接（无 stream_socket_enable_crypto / PureTLS）';
 					return false;
 				}
 				$clientEnc = self::ENCRYPT_NOT_SUP;
@@ -221,23 +297,27 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 			if (($serverEnc === self::ENCRYPT_REQ || $serverEnc === self::ENCRYPT_ON)
 				&& $clientEnc === self::ENCRYPT_NOT_SUP) {
 				$this->lastError = '服务器要求 TLS 加密 (ENCRYPT=' . $serverEnc
-					. ')，请启用 mssql_tcp_encrypt=auto|require，并确保 PHP openssl 可用';
+					. ')，请将 mssql_tcp_encrypt 设为 auto 或 require（纯 PHP TLS 或 openssl 均可）';
 				return false;
 			}
 
-			// 需要 TLS：服务器 ON/REQ，或客户端 require 且服务器接受
+			// 需要 TLS：服务器 ON/REQ；或客户端已声明 ON（server 通常回 ON）
 			$needTls = ($serverEnc === self::ENCRYPT_ON || $serverEnc === self::ENCRYPT_REQ);
-			if ($this->encryptMode === 'require' && !$needTls && $serverEnc === self::ENCRYPT_NOT_SUP) {
+			if ($clientEnc === self::ENCRYPT_ON && $serverEnc === self::ENCRYPT_OFF) {
+				// 少见：仍尝试 TLS（require 场景）
+				$needTls = true;
+			}
+			if ($this->encryptMode === 'require' && $serverEnc === self::ENCRYPT_NOT_SUP) {
 				$this->lastError = '已要求加密，但服务器不支持 TLS (ENCRYPT_NOT_SUP)';
 				return false;
-			}
-			// 部分实例在 OFF 时仍可明文；require 且仅 OFF：尝试 TLS，失败则报错
-			if ($this->encryptMode === 'require' && $serverEnc === self::ENCRYPT_OFF) {
-				$needTls = true;
 			}
 
 			if ($needTls) {
 				if (!$this->enableTls($host)) {
+					$extra = $this->lastError !== null ? $this->lastError : 'TLS 失败';
+					$this->lastError = $extra
+						. '。若未强制加密可用 mssql_tcp_encrypt=disable 或 auto（会明文回退）；'
+						. 'TLS 需 hash + (openssl 或 gmp/bcmath)';
 					return false;
 				}
 			} else {
@@ -296,57 +376,148 @@ if (!defined('SQLMNGER_TDS_CLIENT')) {
 		}
 
 		/**
-		 * PRELOGIN 之后、LOGIN7 之前启用 TLS
+		 * PRELOGIN 之后、LOGIN7 之前启用 TLS。
+		 * MS-TDS：握手期 TLS 记录必须装在 PRELOGIN(0x12) 包内；完成后应用 TDS 经 TLS 加密封送。
+		 *
+		 * 优先纯 PHP TLS1.0（无 OpenSSL 空分片，兼容 SQL Server 2008 R2）；
+		 * 失败再回退 stream_socket_enable_crypto 桥接。
+		 *
 		 * @param string $host
 		 * @return bool
 		 */
 		private function enableTls($host) {
-			if (!is_resource($this->stream)) {
+			$net = is_resource($this->netStream) ? $this->netStream : $this->stream;
+			if (!is_resource($net)) {
 				$this->lastError = 'TLS：无有效套接字';
 				return false;
 			}
+
+			// 1) 纯 PHP TLS 1.0（推荐，兼容 2008 R2；无 BEAST 空分片）
+			// 握手超时封顶 5s：失败时尽快让 auto 走明文回退，避免「连接中」卡十几秒
+			$tlsTo = intval($this->timeoutSec);
+			if ($tlsTo < 2) {
+				$tlsTo = 2;
+			}
+			if ($tlsTo > 5) {
+				$tlsTo = 5;
+			}
+			$pure = SqlmngerPureTlsBridge::handshake($net, $this->packetSize, $tlsTo);
+			if ($pure !== false) {
+				$app = $pure->openAppStream();
+				if ($app !== false) {
+					$this->tlsBridge = $pure;
+					$this->netStream = $net;
+					$this->stream = $app;
+					$this->tlsEnabled = true;
+					return true;
+				}
+				$pureErr = $pure->error !== null ? $pure->error : 'openAppStream 失败';
+				$pure->destroyPairOnly();
+			} else {
+				$pureErr = SqlmngerPureTlsBridge::$lastError;
+				if ($pureErr === null || $pureErr === '') {
+					$pureErr = 'PureTLS 握手失败';
+				}
+			}
+
+			// 2) OpenSSL 流桥：默认跳过
+			// - Pure 失败后同一 TCP 常已被 Schannel 掐断，再握手只会空等到超时
+			// - PHP ext/openssl 对 2008 R2 还有 BEAST 空分片问题，LOGIN 多半仍失败
+			// 需要时在 config 设 mssql_tcp_openssl_fallback=true
+			$tryOssl = false;
+			if (function_exists('sqlmnger_cfg')) {
+				$tryOssl = !!sqlmnger_cfg('mssql_tcp_openssl_fallback', false);
+			}
+			if (!$tryOssl) {
+				$this->lastError = 'TLS 失败：' . $pureErr;
+				return false;
+			}
+
 			if (!function_exists('stream_socket_enable_crypto')) {
-				$this->lastError = 'TLS：PHP 不支持 stream_socket_enable_crypto';
+				$this->lastError = 'TLS：纯 PHP 失败 (' . $pureErr . ')，且无 stream_socket_enable_crypto';
 				return false;
 			}
-			// 再次应用上下文（部分环境 connect 时未完全生效）
+			// 套接字可能已死：OpenSSL 用短超时，避免再卡满 connect_timeout
+			$osslTo = $tlsTo > 3 ? 3 : $tlsTo;
 			$sslOpts = $this->sslContextOptions($host);
-			foreach ($sslOpts as $k => $v) {
-				@stream_context_set_option($this->stream, 'ssl', $k, $v);
-			}
-
-			$method = STREAM_CRYPTO_METHOD_TLS_CLIENT;
-			// 优先 TLS1.2+
-			if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) {
-				$method = STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
-				if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) {
-					$method = $method | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
-				}
-			} elseif (defined('STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT')) {
-				// 兼容旧 PHP：组合 1.0–1.2 若存在
-				$method = STREAM_CRYPTO_METHOD_TLS_CLIENT;
-			}
-
-			$ok = @stream_socket_enable_crypto($this->stream, true, $method);
-			if ($ok !== true) {
-				// 再试一次更宽的 TLS_CLIENT
-				$ok = @stream_socket_enable_crypto($this->stream, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
-			}
-			if ($ok !== true) {
-				$meta = @stream_get_meta_data($this->stream);
-				$hint = '';
-				if (is_array($meta) && !empty($meta['timed_out'])) {
-					$hint = '（超时）';
-				}
-				$trustHint = $this->trustServerCertificate
-					? ''
-					: '；可尝试配置 mssql_tcp_trust_server_certificate=true 信任服务器证书';
-				$this->lastError = 'TLS 握手失败' . $hint
-					. '。请确认服务器证书与 openssl 可用' . $trustHint;
+			$methods = $this->tlsCryptoMethods();
+			if (count($methods) === 0) {
+				$this->lastError = 'TLS：纯 PHP 失败 (' . $pureErr . ')，且无可用 crypto_method';
 				return false;
 			}
+			$method = $methods[0];
+			$bridge = SqlmngerTdsTlsBridge::handshake(
+				$net,
+				$this->packetSize,
+				$osslTo,
+				$sslOpts,
+				$method
+			);
+			if ($bridge === false) {
+				$detail = SqlmngerTdsTlsBridge::$lastHandshakeError;
+				if ($detail === null || $detail === '') {
+					$detail = '未知原因';
+				}
+				$this->lastError = 'TLS 失败：纯 PHP=[' . $pureErr . ']；OpenSSL=[' . $detail . ']';
+				return false;
+			}
+
+			$app = $bridge->openAppStream();
+			if ($app === false) {
+				$msg = $bridge->lastError !== null ? $bridge->lastError : '无法打开 TLS 桥接流';
+				$this->lastError = 'TLS：' . $msg;
+				$bridge->destroyPairOnly();
+				return false;
+			}
+
+			$this->tlsBridge = $bridge;
+			$this->netStream = $net;
+			$this->stream = $app;
 			$this->tlsEnabled = true;
 			return true;
+		}
+
+		/**
+		 * 按环境拼出候选 crypto_method。
+		 * SQL Server 2008 R2 RTM 仅 TLS1.0：必须优先 TLSv1_0 / TLS_CLIENT，
+		 * 不可把 TLSv1_2 放首位（PHP7+ 默认若先试 1.2 会握手秒败）。
+		 * @return int[]
+		 */
+		private function tlsCryptoMethods() {
+			$list = array();
+			// 1) TLS 1.0 专用（PHP 5.6+ / 7.x 有定义）
+			if (defined('STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT')) {
+				$list[] = STREAM_CRYPTO_METHOD_TLSv1_0_CLIENT;
+			}
+			// 2) TLS_CLIENT：PHP5=TLSv1；PHP7 常为多版本位掩码（含 1.0）
+			if (defined('STREAM_CRYPTO_METHOD_TLS_CLIENT')) {
+				$list[] = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+			}
+			// 3) SSLv23 宽松协商（旧 PHP）
+			if (defined('STREAM_CRYPTO_METHOD_SSLv23_CLIENT')) {
+				$list[] = STREAM_CRYPTO_METHOD_SSLv23_CLIENT;
+			}
+			// 4) 较新协议放后（新 SQL Server / 已打 TLS1.2 补丁的 2008R2）
+			if (defined('STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT')) {
+				$list[] = STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT;
+			}
+			if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) {
+				$list[] = STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
+			}
+			$out = array();
+			$seen = array();
+			foreach ($list as $m) {
+				$k = strval($m);
+				if (isset($seen[$k])) {
+					continue;
+				}
+				$seen[$k] = true;
+				$out[] = $m;
+			}
+			if (count($out) === 0 && defined('STREAM_CRYPTO_METHOD_TLS_CLIENT')) {
+				$out[] = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+			}
+			return $out;
 		}
 
 		/**

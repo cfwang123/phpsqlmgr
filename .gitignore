@@ -63,6 +63,19 @@ pnpm-lock.yaml
 # keep it committed for zero-step deploy. Uncomment to ignore:
 # /assets/xui/core.js
 
+# ── .NET build intermediates (tools/SqlmngerMsCli) ───────
+# obj/ = MSBuild intermediates; tools bin/ = compiler output.
+# NOTE: /bin/SqlmngerMsCli.exe stays committed on purpose (copied
+# from the tools build) for zero-step deploy — the PHP mssql_net
+# driver needs it at runtime.
+tools/SqlmngerMsCli/obj/
+tools/SqlmngerMsCli/bin/
+*.pdb
+
+# Local release archives (packaging by-products)
+/*.7z
+/*.zip
+
 # ── IDE / OS ─────────────────────────────────────────────
 .idea/
 .vscode/

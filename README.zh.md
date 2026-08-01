@@ -2,7 +2,7 @@
 
 轻量 Web 数据库管理（MySQL / SQLite / SQL Server），交互参考 Adminer。
 
-**版本**：v1.1.0 · **状态**：可运行原型 / 接近 MVP 主体
+**版本**：v1.0.2 · **状态**：可运行原型 / 接近 MVP 主体
 
 > English: [README.md](README.md) · 变更：[CHANGELOG.md](CHANGELOG.md)
 
@@ -10,7 +10,7 @@
 
 ## 1. 核心特性
 
-1. **三引擎、四驱动** — MySQL · SQLite · SQL Server（微软 PHP 扩展，**或** **纯 PHP 实现的 SQL Server 连接**，免装扩展）。
+1. **三引擎、五驱动** — MySQL · SQLite · SQL Server（微软 PHP 扩展、**纯 PHP 实现的 SQL Server 连接**，**或** Windows 上的 **.NET 辅助 CLI**，免装 PHP 扩展）。
 2. **运行时零 Composer** — 兼容 PHP **≥ 5.5.12**，拷贝即用；Web 根 = 项目根。
 3. **全站 SPA + AJAX JSON** — 登录 / 树 / 表格 / SQL / 导入导出均无整页回帖；登录后凭证在服务端 **Session Vault**，不反复明文回传。
 4. **大表可用** — 一次拉取多行，**VirtualGrid** 只渲染可视区；脏格编辑、Ctrl+Enter 提交、客户端列筛选。
@@ -31,6 +31,7 @@
   - SQLite — PDO SQLite（路径限制在 `sqlite_root`）
   - SQL Server（扩展）— 微软 PHP SQL Server 扩展
   - SQL Server（纯 PHP）— **纯 PHP 实现的 SQL Server 连接**（无需微软扩展；可选加密）
+  - SQL Server（.NET CLI）— Windows 助手进程 `bin/SqlmngerMsCli.exe`（.NET 4.8 SqlClient，Schannel TLS 1.2）；常驻单例 TCP 服务：PHP 需要时启动，多请求共用同一进程，无连接 10 秒后自动退出
 - **多 Tab 多连接**：连接 ID 写入 URL `?c=…`
 - **库 / 表**：顶栏可过滤选库；左侧表树（**右键**：查看数据 / 结构 / 修改结构）
 - **Hash 路由**：恢复活动表、WHERE、排序、LIMIT、页码，以及 **模式**（`m=struct` / `m=alter`）
@@ -127,7 +128,8 @@ cp config/config.example.php config/config.php
 | `debug` | 登录失败是否返回 detail |
 | `allow_empty_password` | 是否允许空密码登录（本地开发常用） |
 | `session_ttl` | Cookie 秒数（默认 7 天） |
-| `enabled_drivers` | MySQL / SQLite / SQL Server（扩展）/ SQL Server（纯 PHP） |
+| `enabled_drivers` | MySQL / SQLite / SQL Server（扩展）/ SQL Server（纯 PHP）/ SQL Server（.NET CLI） |
+| `mssql_net_idle_sec` | .NET CLI 无客户端连接后自动退出秒数（默认 10） |
 | `sqlite_root` | SQLite 路径 jail |
 | `default_table_limit` / `default_sql_limit` | 默认行数（`0` = 不限 / 不自动 LIMIT） |
 | `max_fetch_rows` / `unlimited_soft_max` | 上限 / 不限时软顶 |

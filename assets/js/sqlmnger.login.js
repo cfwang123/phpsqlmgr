@@ -305,6 +305,7 @@ window.SqlmngerLogin = (function () {
 			user: p.user != null ? String(p.user) : '',
 			path: p.path != null ? String(p.path) : '',
 			readonly: !!p.readonly,
+			forceSsl: !!p.forceSsl,
 			savePassword: savePw,
 			passwordEnc: enc,
 			updatedAt: p.updatedAt != null ? Number(p.updatedAt) : Date.now()
@@ -378,6 +379,7 @@ window.SqlmngerLogin = (function () {
 		if (drv === 'sqlite') return 'SQLite';
 		if (drv === 'sqlsrv') return 'SQL Server';
 		if (drv === 'mssql_tcp') return 'MSSQL TCP';
+		if (drv === 'mssql_net') return 'MSSQL .NET';
 		return drv || '?';
 	}
 
@@ -441,7 +443,7 @@ window.SqlmngerLogin = (function () {
 			'  <div class="sqlmnger-login-hd">' +
 			'    <div class="sqlmnger-login-logo"><i class="fa-solid fa-database"></i></div>' +
 			'    <div>' +
-			'      <div class="sqlmnger-login-title">sqlmnger <span class="sqlmnger-login-ver">v1.1.0</span></div>' +
+			'      <div class="sqlmnger-login-title">sqlmnger <span class="sqlmnger-login-ver">v1.0.2</span></div>' +
 			'      <div class="sqlmnger-login-sub">' + esc(_('login.sub')) + '</div>' +
 			'    </div>' +
 			'  </div>' +
@@ -490,6 +492,10 @@ window.SqlmngerLogin = (function () {
 			'      <label class="sqlmnger-check">' +
 			'        <input type="checkbox" name="readonly" /> ' + esc(_('login.readonly')) +
 			'      </label>' +
+			'      <label class="sqlmnger-check sqlmnger-check-forcessl" style="display:none">' +
+			'        <input type="checkbox" name="forceSsl" /> ' + esc(_('login.forceSsl')) +
+			'        <small class="sqlmnger-hint">' + esc(_('login.forceSslHint')) + '</small>' +
+			'      </label>' +
 			'      <label class="sqlmnger-check sqlmnger-check-savepass">' +
 			'        <input type="checkbox" name="savePassword" /> ' + esc(_('login.savePassword')) +
 			'      </label>' +
@@ -522,8 +528,10 @@ window.SqlmngerLogin = (function () {
 		_els.passLabel = form.querySelector('.sqlmnger-pass-label');
 		_els.path = form.querySelector('[name=path]');
 		_els.readonly = form.querySelector('[name=readonly]');
+		_els.forceSsl = form.querySelector('[name=forceSsl]');
 		_els.savePass = form.querySelector('[name=savePassword]');
 		_els.connName = form.querySelector('[name=connName]');
+		_els.fieldForceSsl = form.querySelector('.sqlmnger-check-forcessl');
 		_els.msg = _root.querySelector('.sqlmnger-login-msg');
 		_els.net = _root.querySelector('.sqlmnger-net-fields');
 		_els.fieldDb = _root.querySelector('.sqlmnger-field-db');
@@ -544,7 +552,7 @@ window.SqlmngerLogin = (function () {
 		_els.driver.onchange = function () {
 			_state.driver = _els.driver.value;
 			if (_state.driver === 'mysql') _els.port.value = 3306;
-			if (_state.driver === 'sqlsrv' || _state.driver === 'mssql_tcp') _els.port.value = 1433;
+			if (_state.driver === 'sqlsrv' || _state.driver === 'mssql_tcp' || _state.driver === 'mssql_net') _els.port.value = 1433;
 			applyDriverUi();
 		};
 
@@ -639,6 +647,7 @@ window.SqlmngerLogin = (function () {
 		clearVaultPass();
 		if (_els.database) _els.database.value = '';
 		if (_els.readonly) _els.readonly.checked = false;
+		if (_els.forceSsl) _els.forceSsl.checked = false;
 		if (_els.savePass) _els.savePass.checked = false;
 		// 保留 host/user 便于改连
 		fillDriverSelect();
@@ -672,6 +681,7 @@ window.SqlmngerLogin = (function () {
 		_state.driver = p.driver;
 		if (_els.host) _els.host.value = p.host || '127.0.0.1';
 		if (_els.port) _els.port.value = p.port > 0 ? p.port : (p.driver === 'mysql' ? 3306 : 1433);
+		if (_els.forceSsl) _els.forceSsl.checked = !!p.forceSsl;
 		if (_els.database) _els.database.value = p.database || '';
 		if (_els.user) _els.user.value = p.user || '';
 		if (_els.path) _els.path.value = p.path || '';
@@ -690,16 +700,24 @@ window.SqlmngerLogin = (function () {
 	}
 
 	function readFormBody() {
-		return {
-			driver: _els.driver ? _els.driver.value : 'mysql',
+		var driver = _els.driver ? _els.driver.value : 'mysql';
+		var forceSsl = !!( _els.forceSsl && _els.forceSsl.checked );
+		var body = {
+			driver: driver,
 			host: _els.host ? String(_els.host.value).trim() : '',
 			port: _els.port ? (parseInt(_els.port.value, 10) || 0) : 0,
 			database: _els.database ? String(_els.database.value).trim() : '',
 			user: _els.user ? String(_els.user.value) : '',
 			password: resolvePasswordForSubmit(),
 			path: _els.path ? String(_els.path.value).trim() : '',
-			readonly: !!( _els.readonly && _els.readonly.checked )
+			readonly: !!( _els.readonly && _els.readonly.checked ),
+			force_ssl: forceSsl
 		};
+		// SQL Server TDS / .NET CLI：强制 SSL → require；未勾选用 auto
+		if (driver === 'mssql_tcp' || driver === 'mssql_net') {
+			body.encrypt = forceSsl ? 'require' : 'auto';
+		}
+		return body;
 	}
 
 	function doSaveProfile() {
@@ -719,6 +737,7 @@ window.SqlmngerLogin = (function () {
 			user: body.user,
 			path: body.path,
 			readonly: body.readonly,
+			forceSsl: !!body.force_ssl,
 			savePassword: savePw,
 			passwordEnc: '',
 			updatedAt: Date.now()
@@ -755,7 +774,8 @@ window.SqlmngerLogin = (function () {
 			{ id: 'mysql', label: 'MySQL / MariaDB', available: true },
 			{ id: 'sqlite', label: 'SQLite', available: true },
 			{ id: 'sqlsrv', label: 'SQL Server (sqlsrv)', available: true },
-			{ id: 'mssql_tcp', label: 'SQL Server (TCP/TDS)', available: true }
+			{ id: 'mssql_tcp', label: 'SQL Server (TCP/TDS)', available: true },
+			{ id: 'mssql_net', label: 'SQL Server (.NET CLI)', available: true }
 		];
 		var i, d, opt, first = null;
 		for (i = 0; i < list.length; i++) {
@@ -774,14 +794,16 @@ window.SqlmngerLogin = (function () {
 			sel.value = first;
 			_state.driver = first;
 			if (first === 'mysql') _els.port.value = 3306;
-			if (first === 'sqlsrv' || first === 'mssql_tcp') _els.port.value = 1433;
+			if (first === 'sqlsrv' || first === 'mssql_tcp' || first === 'mssql_net') _els.port.value = 1433;
 		} else if (sel.value) {
 			_state.driver = sel.value;
 		}
 	}
 
 	function applyDriverUi() {
-		var isSqlite = (_els.driver && _els.driver.value === 'sqlite');
+		var drv = _els.driver ? _els.driver.value : '';
+		var isSqlite = (drv === 'sqlite');
+		var isMssqlEnc = (drv === 'mssql_tcp' || drv === 'mssql_net');
 		if (_els.net) _els.net.style.display = isSqlite ? 'none' : 'flex';
 		if (_els.fieldDb) _els.fieldDb.style.display = isSqlite ? 'none' : 'block';
 		if (_els.fieldUser) _els.fieldUser.style.display = isSqlite ? 'none' : 'block';
@@ -790,6 +812,10 @@ window.SqlmngerLogin = (function () {
 		// SQLite 无密码，隐藏记住密码
 		var sp = _root && _root.querySelector('.sqlmnger-check-savepass');
 		if (sp) sp.style.display = isSqlite ? 'none' : 'flex';
+		// 强制 SSL：TDS 纯 PHP / .NET CLI
+		if (_els.fieldForceSsl) {
+			_els.fieldForceSsl.style.display = isMssqlEnc ? 'flex' : 'none';
+		}
 		updatePassHint();
 	}
 
@@ -819,7 +845,8 @@ window.SqlmngerLogin = (function () {
 		if (_els.btn) _els.btn.disabled = true;
 
 		SqlmngerApi.setConnId('');
-		SqlmngerApi.post('api/auth_login.php', body).then(function (env) {
+		// 登录含 TLS/回退，给足时间但勿用全局 120s 默默挂死
+		SqlmngerApi.post('api/auth_login.php', body, { timeoutMs: 45000 }).then(function (env) {
 			if (_els.btn) _els.btn.disabled = false;
 			// 登录成功：自动保存/更新连接（名称沿用或默认）
 			autoSaveAfterLogin(body);
@@ -831,8 +858,12 @@ window.SqlmngerLogin = (function () {
 			if (_els.btn) _els.btn.disabled = false;
 			var msg = _('login.fail', { msg: '' });
 			if (err && err.error) {
-				msg = err.error.message || msg;
-				if (err.error.detail) msg += ' — ' + err.error.detail;
+				if (err.error.code === 'TIMEOUT') {
+					msg = '连接超时：请检查主机/端口、SQL Server 是否启动，或将 config mssql_tcp_encrypt 设为 disable 试明文';
+				} else {
+					msg = err.error.message || msg;
+					if (err.error.detail) msg += ' — ' + err.error.detail;
+				}
 			}
 			setMsg(msg, 'err');
 		});
@@ -854,6 +885,7 @@ window.SqlmngerLogin = (function () {
 			user: body.user,
 			path: body.path,
 			readonly: body.readonly,
+			forceSsl: !!body.force_ssl,
 			savePassword: savePw,
 			passwordEnc: '',
 			updatedAt: Date.now()

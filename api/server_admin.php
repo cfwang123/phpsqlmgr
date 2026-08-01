@@ -384,7 +384,7 @@ function sqlmnger_server_kill_process($h, $id) {
 		sqlmnger_exec($h, 'KILL ' . intval($id), array());
 		return array('ok' => true, 'id' => intval($id));
 	}
-	if ($driver === 'sqlsrv' || $driver === 'mssql_tcp') {
+	if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 		sqlmnger_exec($h, 'KILL ' . intval($id), array());
 		return array('ok' => true, 'id' => intval($id));
 	}

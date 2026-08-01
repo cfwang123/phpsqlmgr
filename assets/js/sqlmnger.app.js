@@ -6,7 +6,7 @@
  * - 中心 Tabs：打开表（数据编辑 + 结构/索引）
  */
 window.SqlmngerApp = (function () {
-	var APP_VERSION = '1.1.0';
+	var APP_VERSION = '1.0.2';
 
 	var t = {
 		start: start,
@@ -49,7 +49,11 @@ window.SqlmngerApp = (function () {
 		var cid = SqlmngerApi.readConnIdFromUrl();
 		if (cid) SqlmngerApi.setConnId(cid);
 
-		SqlmngerApi.get('api/auth_me.php', cid ? { c: cid } : {}).then(function (env) {
+		// 避免 auth_me 卡住时长时间白屏（默认 XHR 120s）
+		showBootSplash();
+
+		SqlmngerApi.get('api/auth_me.php', cid ? { c: cid } : {}, { timeoutMs: 12000 }).then(function (env) {
+			hideBootSplash();
 			var data = env.data || {};
 			if (data.logged_in && data.connection) {
 				_connection = data.connection;
@@ -67,8 +71,28 @@ window.SqlmngerApp = (function () {
 			}
 		}).catch(function (err) {
 			console.warn(err);
+			hideBootSplash();
+			// 超时/网络失败也进登录页，避免白屏干等
 			showLogin({});
 		});
+	}
+
+	function showBootSplash() {
+		if (document.getElementById('sqlmnger-boot-splash')) return;
+		var el = document.createElement('div');
+		el.id = 'sqlmnger-boot-splash';
+		el.setAttribute('style',
+			'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;' +
+			'background:#f4f6f8;color:#334;font:14px/1.5 system-ui,Segoe UI,sans-serif;');
+		el.innerHTML = '<div style="text-align:center;padding:24px;">' +
+			'<div style="font-size:18px;font-weight:600;margin-bottom:8px;">sqlmnger</div>' +
+			'<div style="opacity:.75;">正在加载…</div></div>';
+		document.body.appendChild(el);
+	}
+
+	function hideBootSplash() {
+		var el = document.getElementById('sqlmnger-boot-splash');
+		if (el && el.parentNode) el.parentNode.removeChild(el);
 	}
 
 	function showLogin(authData) {
@@ -303,6 +327,7 @@ window.SqlmngerApp = (function () {
 		if (d === 'mysql') return 'MySQL';
 		if (d === 'sqlsrv' || d === 'mssql') return 'SQL Server (sqlsrv)';
 		if (d === 'mssql_tcp') return 'SQL Server (TCP/TDS)';
+		if (d === 'mssql_net') return 'SQL Server (.NET CLI)';
 		if (d === 'sqlite') return 'SQLite';
 		return driver || _('common.unknown');
 	}
@@ -338,10 +363,19 @@ window.SqlmngerApp = (function () {
 		var ip = mainHost(c);
 		var user = c.driver === 'sqlite' ? '—' : (c.user || '—');
 		var ro = c.readonly ? '<span class="sqlmnger-meta-ro">' + esc(_('common.readonly')) + '</span>' : '';
+		var sslHtml = '';
+		if (c.driver === 'mssql_tcp' || c.driver === 'mssql_net') {
+			if (c.tls || c.ssl) {
+				sslHtml = '<span class="sqlmnger-meta-ssl on" title="' + esc(_('app.sslOn')) + '"><i class="fa-solid fa-lock"></i> <em>SSL</em> <b>' + esc(_('app.sslOnShort')) + '</b></span>';
+			} else {
+				sslHtml = '<span class="sqlmnger-meta-ssl off" title="' + esc(_('app.sslOff')) + '"><i class="fa-solid fa-lock-open"></i> <em>SSL</em> <b>' + esc(_('app.sslOffShort')) + '</b></span>';
+			}
+		}
 		meta.innerHTML =
 			'<span class="sqlmnger-meta-item" title="' + esc(_('app.type')) + '"><i class="fa-solid fa-server"></i> <em>' + esc(_('app.type')) + '</em> <b>' + esc(type) + '</b></span>' +
 			'<span class="sqlmnger-meta-item" title="Host / IP"><i class="fa-solid fa-network-wired"></i> <em>' + esc(_('app.ip')) + '</em> <b>' + esc(ip) + '</b></span>' +
 			'<span class="sqlmnger-meta-item" title="' + esc(_('app.user')) + '"><i class="fa-solid fa-user"></i> <em>' + esc(_('app.user')) + '</em> <b>' + esc(user) + '</b></span>' +
+			sslHtml +
 			ro;
 	}
 
@@ -1787,7 +1821,11 @@ window.SqlmngerApp = (function () {
 		var db = c.database ? '/' + c.database : '';
 		var user = c.user ? (c.user + '@') : '';
 		var ro = c.readonly ? ' · 只读' : '';
-		return (c.driver || '') + ' · ' + user + host + (port ? (':' + port) : '') + db + ro;
+		var ssl = '';
+		if (c.driver === 'mssql_tcp' || c.driver === 'mssql_net') {
+			ssl = (c.tls || c.ssl) ? ' · SSL' : ' · 明文';
+		}
+		return (c.driver || '') + ' · ' + user + host + (port ? (':' + port) : '') + db + ssl + ro;
 	}
 
 	function setStatus(text) {

@@ -66,10 +66,10 @@ function sqlmnger_cfg($key, $default = null) {
 function sqlmnger_config_defaults() {
 	return array(
 		'app_name' => 'sqlmnger',
-		'app_version' => '1.1.0',
+		'app_version' => '1.0.2',
 		'app_key' => 'dev-only-key-change-in-production-32b',
 		'debug' => true,
-		'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp'),
+		'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp', 'mssql_net'),
 		'session_name' => 'SQLMNGERSESSID',
 		'session_ttl' => 604800,
 		'login_max_attempts' => 10,
@@ -97,6 +97,10 @@ function sqlmnger_config_defaults() {
 		 * 信任 SQL Server 证书（自签/内网主机名不匹配时常用 true）
 		 */
 		'mssql_tcp_trust_server_certificate' => true,
+		/** PureTLS 失败后是否再试 OpenSSL 流桥（默认 false，加快失败回退） */
+		'mssql_tcp_openssl_fallback' => false,
+		/** mssql_net 常驻 CLI 无连接后自动退出秒数 */
+		'mssql_net_idle_sec' => 10,
 	);
 }
 
@@ -257,6 +261,10 @@ function sqlmnger_json_out($ok, $data, $error, $httpCode) {
 	if ($httpCode === null) {
 		$httpCode = $ok ? 200 : 400;
 	}
+	// 输出前释放锁，避免客户端已断开后仍占用 session
+	if (function_exists('sqlmnger_session_close')) {
+		sqlmnger_session_close();
+	}
 	if (!headers_sent()) {
 		header('Content-Type: application/json; charset=utf-8');
 		header('Cache-Control: no-store');
@@ -316,6 +324,22 @@ function sqlmnger_read_json_body() {
 	return $j;
 }
 
+/**
+ * Session TTL（秒），钳制在合理范围，避免 32 位 time()+ttl 溢出或 Cookie 异常。
+ * @return int
+ */
+function sqlmnger_session_ttl() {
+	$ttl = intval(sqlmnger_cfg('session_ttl', 604800));
+	if ($ttl < 3600) {
+		$ttl = 3600;
+	}
+	// 最多 30 天：过大时部分环境 session/cookie 行为异常，且拖慢 GC
+	if ($ttl > 2592000) {
+		$ttl = 2592000;
+	}
+	return $ttl;
+}
+
 function sqlmnger_session_start() {
 	$cfg = sqlmnger_config();
 	$name = isset($cfg['session_name']) ? $cfg['session_name'] : 'SQLMNGERSESSID';
@@ -323,11 +347,7 @@ function sqlmnger_session_start() {
 		session_name($name);
 	}
 	// 持久 Cookie：关闭浏览器后仍保持登录（lifetime > 0）
-	// session_ttl：秒，默认 7 天
-	$ttl = isset($cfg['session_ttl']) ? intval($cfg['session_ttl']) : 604800;
-	if ($ttl < 3600) {
-		$ttl = 3600;
-	}
+	$ttl = sqlmnger_session_ttl();
 	// 垃圾回收不早于 Cookie 生命周期
 	@ini_set('session.gc_maxlifetime', strval($ttl));
 	@ini_set('session.cookie_lifetime', strval($ttl));
@@ -341,20 +361,32 @@ function sqlmnger_session_start() {
 		$secure = true;
 	}
 
-	if (session_id() === '') {
-		if (defined('PHP_VERSION_ID') && PHP_VERSION_ID >= 70300) {
-			session_set_cookie_params(array(
-				'lifetime' => $ttl,
-				'path' => '/',
-				'secure' => $secure,
-				'httponly' => true,
-				'samesite' => 'Lax',
-			));
-		} else {
-			// PHP 5.5–7.2
-			session_set_cookie_params($ttl, '/', '', $secure, true);
+	// 注意：session_write_close() 之后 session_id() 仍可能非空，但会话已不 ACTIVE。
+	// 若用 session_id()==='' 判断，会跳过二次 session_start()，导致登录写入的
+	// $_SESSION 不落盘 → 后续 db_list 等接口 401「连接无效」。
+	$active = false;
+	if (function_exists('session_status')) {
+		// PHP 5.4+：PHP_SESSION_ACTIVE = 2
+		$active = (session_status() === PHP_SESSION_ACTIVE);
+	}
+	if (!$active) {
+		// 仅全新会话设置 cookie 参数；reopen 时保留已有 session_id
+		if (session_id() === '') {
+			if (defined('PHP_VERSION_ID') && PHP_VERSION_ID >= 70300) {
+				session_set_cookie_params(array(
+					'lifetime' => $ttl,
+					'path' => '/',
+					'secure' => $secure,
+					'httponly' => true,
+					'samesite' => 'Lax',
+				));
+			} else {
+				// PHP 5.5–7.2
+				session_set_cookie_params($ttl, '/', '', $secure, true);
+			}
 		}
-		session_start();
+		// 避免并发请求长时间占锁：业务在慢操作前调用 sqlmnger_session_close()
+		@session_start();
 	}
 
 	// 滑动续期：每次请求刷新 Cookie 过期时间（保持登录）
@@ -376,6 +408,23 @@ function sqlmnger_session_start() {
 		} else {
 			setcookie(session_name(), session_id(), $expire, $path, $domain, $secure, $httponly);
 		}
+	}
+}
+
+/**
+ * 释放 session 文件锁（慢 IO / 连库前必须调用，否则其它请求会卡在 session_start）。
+ * 调用后仍可读本请求已载入的 $_SESSION 数组副本语义：写入需先 sqlmnger_session_start() 再改。
+ */
+function sqlmnger_session_close() {
+	if (function_exists('session_status')) {
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			@session_write_close();
+		}
+		return;
+	}
+	// PHP 5.3：session_id 非空且已 start
+	if (session_id() !== '') {
+		@session_write_close();
 	}
 }
 
@@ -565,6 +614,9 @@ function sqlmnger_try_connect($conn) {
 	if ($driver === 'mssql_tcp') {
 		return sqlmnger_try_mssql_tcp($conn);
 	}
+	if ($driver === 'mssql_net') {
+		return sqlmnger_try_mssql_net($conn);
+	}
 	return array('ok' => false, 'message' => '不支持的引擎: ' . $driver, 'server_version' => '', 'driver' => $driver);
 }
 
@@ -572,7 +624,7 @@ function sqlmnger_try_connect($conn) {
  * SQL Server 方言族（官方 sqlsrv 扩展 或 自研 TCP/TDS）
  */
 function sqlmnger_is_mssql_family($driver) {
-	return $driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql';
+	return $driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net' || $driver === 'mssql';
 }
 
 function sqlmnger_try_mysql($conn) {
@@ -868,6 +920,63 @@ function sqlmnger_try_mssql_tcp($conn) {
 }
 
 /**
+ * .NET 4.8 命令行 SqlmngerMsCli（Schannel，适合 PHP 5.5 远程加密）
+ */
+function sqlmnger_try_mssql_net($conn) {
+	require_once __DIR__ . '/tds/MssqlNetClient.php';
+	if (!SqlmngerMssqlNetClient::isAvailable()) {
+		return array(
+			'ok' => false,
+			'message' => '未找到 bin/SqlmngerMsCli.exe（需 .NET Framework 4.8，Windows）',
+			'server_version' => '',
+			'driver' => 'mssql_net',
+		);
+	}
+	$host = isset($conn['host']) ? $conn['host'] : '127.0.0.1';
+	$port = isset($conn['port']) ? intval($conn['port']) : 1433;
+	if ($port <= 0) {
+		$port = 1433;
+	}
+	$user = isset($conn['user']) ? $conn['user'] : '';
+	$pass = isset($conn['password']) ? $conn['password'] : '';
+	$db = isset($conn['database']) ? $conn['database'] : '';
+	$cto = intval(sqlmnger_cfg('connect_timeout_sec', 8));
+	if ($cto < 1) {
+		$cto = 8;
+	}
+	$opts = array(
+		'encrypt' => sqlmnger_cfg('mssql_tcp_encrypt', 'auto'),
+		'trustServerCertificate' => sqlmnger_cfg('mssql_tcp_trust_server_certificate', true),
+	);
+	if (isset($conn['encrypt']) && strval($conn['encrypt']) !== '') {
+		$opts['encrypt'] = $conn['encrypt'];
+	}
+	if (array_key_exists('trust_server_certificate', $conn)) {
+		$opts['trustServerCertificate'] = !!$conn['trust_server_certificate'];
+	}
+	$client = new SqlmngerMssqlNetClient();
+	$ok = $client->connect($host, $port, $user, $pass, $db, $cto * 1000, $opts);
+	if (!$ok) {
+		$msg = $client->getLastError();
+		if ($msg === null || $msg === '') {
+			$msg = '.NET CLI 连接失败';
+		}
+		$client->disconnect();
+		return array('ok' => false, 'message' => $msg, 'server_version' => '', 'driver' => 'mssql_net');
+	}
+	$ver = $client->getServerVersion();
+	$tls = $client->isTlsEnabled();
+	$client->disconnect();
+	return array(
+		'ok' => true,
+		'message' => 'ok',
+		'server_version' => $ver !== null ? $ver : '',
+		'driver' => 'mssql_net',
+		'tls' => $tls,
+	);
+}
+
+/**
  * 多连接会话（类似 Adminer：连接标识在 URL ?c=xxxx）
  * 结构：$_SESSION['sqlmnger_conns'][$connId] = 连接数据
  * 兼容旧版：自动迁移 sqlmnger_conn
@@ -976,6 +1085,10 @@ function sqlmnger_session_public($connId = null) {
 		'readonly' => !empty($c['readonly']),
 		'server_version' => isset($c['server_version']) ? $c['server_version'] : '',
 		'logged_in_at' => isset($c['logged_in_at']) ? $c['logged_in_at'] : null,
+		// SQL Server TCP/TDS 是否 TLS 加密登录
+		'tls' => !empty($c['tls']),
+		'ssl' => !empty($c['tls']),
+		'encrypt' => isset($c['encrypt']) ? $c['encrypt'] : '',
 	);
 }
 
@@ -1014,6 +1127,10 @@ function sqlmnger_enabled_drivers() {
 			// 纯 TCP/TDS，仅需 stream_socket_client（PHP 核心）
 			$avail = function_exists('stream_socket_client');
 			$hint = $avail ? 'TCP/TDS' : '缺少 stream_socket_client';
+		} elseif ($d === 'mssql_net') {
+			require_once __DIR__ . '/tds/MssqlNetClient.php';
+			$avail = SqlmngerMssqlNetClient::isAvailable();
+			$hint = $avail ? '.NET 4.8 SqlClient' : '缺少 bin/SqlmngerMsCli.exe（Windows + .NET 4.8）';
 		}
 		$out[] = array(
 			'id' => $d,
@@ -1037,6 +1154,9 @@ function sqlmnger_driver_label($d) {
 	}
 	if ($d === 'mssql_tcp') {
 		return 'SQL Server (TCP/TDS)';
+	}
+	if ($d === 'mssql_net') {
+		return 'SQL Server (.NET CLI)';
 	}
 	return $d;
 }
