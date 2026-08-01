@@ -44,7 +44,7 @@ if ($scope !== 'page' && $scope !== 'all') {
 if (array_key_exists('limit', $body)) {
 	$limit = intval($body['limit']);
 } else {
-	$limit = intval(sqlmnger_cfg('default_table_limit', 100000));
+	$limit = intval(sqlmnger_cfg('default_table_limit', 2000));
 }
 $maxFetch = intval(sqlmnger_cfg('max_fetch_rows', 1000000));
 if ($maxFetch > 0 && $limit > $maxFetch) {

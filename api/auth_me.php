@@ -34,7 +34,7 @@ sqlmnger_json_ok(array(
 	),
 	// 前端可读的非敏感系统参数（不含 app_key）
 	'limits' => array(
-		'default_table_limit' => intval(sqlmnger_cfg('default_table_limit', 100000)),
+		'default_table_limit' => intval(sqlmnger_cfg('default_table_limit', 2000)),
 		'default_sql_limit' => intval(sqlmnger_cfg('default_sql_limit', 0)),
 		'max_fetch_rows' => intval(sqlmnger_cfg('max_fetch_rows', 1000000)),
 	),

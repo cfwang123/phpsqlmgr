@@ -75,6 +75,7 @@ tools/SqlmngerMsCli/bin/
 # Local release archives (packaging by-products)
 /*.7z
 /*.zip
+/*.rar
 
 # ── IDE / OS ─────────────────────────────────────────────
 .idea/

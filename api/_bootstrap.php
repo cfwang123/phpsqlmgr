@@ -66,7 +66,7 @@ function sqlmnger_cfg($key, $default = null) {
 function sqlmnger_config_defaults() {
 	return array(
 		'app_name' => 'sqlmnger',
-		'app_version' => '1.0.2',
+		'app_version' => '1.0.3',
 		'app_key' => 'dev-only-key-change-in-production-32b',
 		'debug' => true,
 		'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp', 'mssql_net'),
@@ -78,7 +78,7 @@ function sqlmnger_config_defaults() {
 		'allow_empty_password' => true,
 		'sqlite_root' => SQLMNGER_ROOT . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'sqlite',
 		'sqlite_allowed_extensions' => array('db', 'sqlite', 'sqlite3'),
-		'default_table_limit' => 100000,
+		'default_table_limit' => 2000,
 		'default_sql_limit' => 0,
 		'max_fetch_rows' => 1000000,
 		'unlimited_soft_max' => 2000000,
@@ -1160,3 +1160,104 @@ function sqlmnger_driver_label($d) {
 	}
 	return $d;
 }
+
+/**
+ * API 错误处理：致命错误 / 未捕获异常一律输出合法 JSON，避免前端「响应不是合法 JSON」。
+ * 兼容 PHP 5.5+（无 Throwable 类型提示）。
+ */
+function sqlmnger_install_error_handlers() {
+	static $done = false;
+	if ($done) {
+		return;
+	}
+	$done = true;
+
+	// 禁止 PHP/Xdebug 把 fatal 打成 HTML 混进响应体
+	@ini_set('display_errors', '0');
+	@ini_set('html_errors', '0');
+	@ini_set('display_startup_errors', '0');
+
+	set_exception_handler('sqlmnger_exception_handler');
+	register_shutdown_function('sqlmnger_shutdown_handler');
+}
+
+function sqlmnger_exception_handler($ex) {
+	$msg = '未捕获异常';
+	$detail = '';
+	if (is_object($ex)) {
+		if (method_exists($ex, 'getMessage')) {
+			$m = $ex->getMessage();
+			if ($m !== null && $m !== '') {
+				$msg = strval($m);
+			}
+		}
+		if (method_exists($ex, 'getFile') && method_exists($ex, 'getLine')) {
+			$detail = strval($ex->getFile()) . ':' . intval($ex->getLine());
+		}
+	}
+	if (function_exists('sqlmnger_json_err')) {
+		sqlmnger_json_err('EXCEPTION', $msg, 500, $detail !== '' ? $detail : null);
+	}
+	// sqlmnger_json_err 会 exit；兜底
+	sqlmnger_emit_fatal_json('EXCEPTION', $msg, $detail);
+}
+
+function sqlmnger_shutdown_handler() {
+	$err = error_get_last();
+	if (!is_array($err) || empty($err['type'])) {
+		return;
+	}
+	$type = intval($err['type']);
+	// 仅处理致命类（含内存耗尽 Allowed memory size exhausted）
+	$fatal = E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR;
+	if (($type & $fatal) === 0) {
+		return;
+	}
+	// 已正常 JSON 退出时不应再写（exit 后 shutdown 仍会跑，但通常无 fatal）
+	$msg = isset($err['message']) ? strval($err['message']) : 'Fatal error';
+	$file = isset($err['file']) ? strval($err['file']) : '';
+	$line = isset($err['line']) ? intval($err['line']) : 0;
+	$detail = $file !== '' ? ($file . ':' . $line) : '';
+	sqlmnger_emit_fatal_json('FATAL', $msg, $detail);
+}
+
+/**
+ * 输出最小 JSON 错误体（shutdown 时可能已接近内存上限，尽量少分配）。
+ */
+function sqlmnger_emit_fatal_json($code, $message, $detail) {
+	// 尽量清掉 Xdebug/缓冲里已输出的 HTML
+	while (ob_get_level() > 0) {
+		@ob_end_clean();
+	}
+	// 内存耗尽后给一点余量，否则连 json_encode 都可能失败
+	$cur = @ini_get('memory_limit');
+	if ($cur !== false && $cur !== '' && strcasecmp($cur, '-1') !== 0) {
+		@ini_set('memory_limit', '160M');
+	}
+	if (!headers_sent()) {
+		@header('Content-Type: application/json; charset=utf-8');
+		@header('Cache-Control: no-store');
+		if (function_exists('http_response_code')) {
+			@http_response_code(500);
+		}
+	}
+	$err = array('code' => strval($code), 'message' => strval($message));
+	if ($detail !== null && $detail !== '') {
+		$err['detail'] = strval($detail);
+	}
+	$out = array(
+		'ok' => false,
+		'data' => null,
+		'error' => $err,
+		'meta' => array('request_id' => ''),
+	);
+	$json = @json_encode($out, 256);
+	if ($json === false || $json === null) {
+		// 极端情况：手工拼最小 JSON
+		$safeMsg = str_replace(array('\\', '"', "\r", "\n"), array('\\\\', '\\"', ' ', ' '), strval($message));
+		$json = '{"ok":false,"data":null,"error":{"code":"FATAL","message":"' . $safeMsg . '"},"meta":{"request_id":""}}';
+	}
+	echo $json;
+}
+
+sqlmnger_install_error_handlers();

@@ -2,7 +2,7 @@
 
 轻量 Web 数据库管理（MySQL / SQLite / SQL Server），交互参考 Adminer。
 
-**版本**：v1.0.2 · **状态**：可运行原型 / 接近 MVP 主体
+**版本**：v1.0.3 · **状态**：可运行原型 / 接近 MVP 主体
 
 > English: [README.md](README.md) · 变更：[CHANGELOG.md](CHANGELOG.md)
 

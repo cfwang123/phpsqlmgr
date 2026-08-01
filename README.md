@@ -2,7 +2,7 @@
 
 Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Adminer.
 
-**Version**: v1.0.2 · **Status**: runnable prototype / near-MVP
+**Version**: v1.0.3 · **Status**: runnable prototype / near-MVP
 
 > Chinese: [README.zh.md](README.zh.md) · Changes: [CHANGELOG.md](CHANGELOG.md)
 

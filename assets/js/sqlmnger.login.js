@@ -443,7 +443,7 @@ window.SqlmngerLogin = (function () {
 			'  <div class="sqlmnger-login-hd">' +
 			'    <div class="sqlmnger-login-logo"><i class="fa-solid fa-database"></i></div>' +
 			'    <div>' +
-			'      <div class="sqlmnger-login-title">sqlmnger <span class="sqlmnger-login-ver">v1.0.2</span></div>' +
+			'      <div class="sqlmnger-login-title">sqlmnger <span class="sqlmnger-login-ver">v1.0.3</span></div>' +
 			'      <div class="sqlmnger-login-sub">' + esc(_('login.sub')) + '</div>' +
 			'    </div>' +
 			'  </div>' +

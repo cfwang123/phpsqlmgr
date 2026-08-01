@@ -1,6 +1,6 @@
 /* XUI bundle — auto-merged from src/; DO NOT EDIT.
  * Edit files under assets/xui/src/ then refresh page (mtime rebuild).
- * Generated: 2026-07-30 06:34:31
+ * Generated: 2026-08-01 15:39:54
  */
 
 /* ==== 00-head.js ==== */
@@ -2465,12 +2465,20 @@ X = (function(w){
 				var col = cols[ci];
 				var d = document.createElement('div');
 				d._col = col;
-				d.style.cssText = 'width:' + col.w + 'px;min-width:' + col.w + 'px;text-align:' + (col.a || 'left') + ';flex-shrink:0;padding:4px 6px;cursor:pointer;font-weight:bold;font-size:var(--x-font-size);border-right:1px solid var(--x-border);user-select:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:' + (ROW_H - 8) + 'px;';
-				d.textContent = col.t;
+				d.className = 'xvr-th' + (_isSortableCol(ci) ? ' is-sortable' : '');
+				// overflow 交给内部 label；悬停操作钮需可见
+				d.style.cssText = 'width:' + col.w + 'px;min-width:' + col.w + 'px;text-align:' + (col.a || 'left') + ';flex-shrink:0;padding:4px 6px;cursor:pointer;font-weight:bold;font-size:var(--x-font-size);border-right:1px solid var(--x-border);user-select:none;overflow:visible;white-space:nowrap;line-height:' + (ROW_H - 8) + 'px;';
 				(function(el) {
 					function getColIdx() {
 						return colEls.indexOf(el);
 					}
+					d.onmouseenter = function () {
+						var idx = getColIdx();
+						showHeaderFloatActs(idx, el);
+					};
+					d.onmouseleave = function () {
+						scheduleHideHeaderFloatActs();
+					};
 					d.onclick = function(e) {
 						// 列宽拖拽柄：即使未拖动也不排序
 						if (_suppressHeaderSortClick) {
@@ -2478,10 +2486,12 @@ X = (function(w){
 							return;
 						}
 						if (_dragWasDragged) { _dragWasDragged = false; return; }
-						// 点在 resizer 上（冒泡）忽略
+						// 点在 resizer / Adminer 风格操作钮上忽略整格排序
 						var tg = e && e.target;
 						if (tg && tg.classList && tg.classList.contains('xvr-col-resizer')) return;
 						if (tg && tg.closest && tg.closest('.xvr-col-resizer')) return;
+						if (tg && tg.classList && tg.classList.contains('xvr-th-act')) return;
+						if (tg && tg.closest && tg.closest('.xvr-th-act')) return;
 						if (editState) commitEdit();
 						if (!sortable) return;
 						var idx = getColIdx();
@@ -2848,8 +2858,107 @@ X = (function(w){
 				_dragCol=null;
 			}
 
+			// Adminer 风格列头操作：fixed 浮层挂到 body，避免被 overflow:hidden 裁切
+			var floatActs = null;
+			var floatActsCol = -1;
+			var floatActsCell = null;
+			var floatHideTimer = null;
+
+			function hideHeaderFloatActs() {
+				if (floatHideTimer) {
+					clearTimeout(floatHideTimer);
+					floatHideTimer = null;
+				}
+				if (floatActs) floatActs.style.display = 'none';
+				floatActsCol = -1;
+				floatActsCell = null;
+			}
+
+			function scheduleHideHeaderFloatActs() {
+				if (floatHideTimer) clearTimeout(floatHideTimer);
+				floatHideTimer = setTimeout(hideHeaderFloatActs, 120);
+			}
+
+			function ensureHeaderFloatActs() {
+				if (floatActs) return floatActs;
+				floatActs = document.createElement('span');
+				floatActs.className = 'xvr-th-acts xvr-th-acts-float';
+				floatActs.style.display = 'none';
+				var aDesc = document.createElement('a');
+				aDesc.href = 'javascript:void(0)';
+				aDesc.className = 'xvr-th-act xvr-th-act-desc';
+				aDesc.title = vgT('table.headerSortDesc', '倒序');
+				aDesc.textContent = '\u2193';
+				aDesc.onclick = function (ev) {
+					if (ev) {
+						ev.preventDefault();
+						ev.stopPropagation();
+					}
+					var idx = floatActsCol;
+					hideHeaderFloatActs();
+					if (editState) commitEdit();
+					if (!sortable || idx < 0 || !_isSortableCol(idx)) return;
+					sortKeys = [{ col: idx, dir: -1, field: _colField(idx) }];
+					_syncLegacySort();
+					runSortUI();
+				};
+				var aWhere = document.createElement('a');
+				aWhere.href = 'javascript:void(0)';
+				aWhere.className = 'xvr-th-act xvr-th-act-where';
+				aWhere.title = vgT('table.headerWhere', '筛选到 WHERE');
+				aWhere.textContent = '=';
+				aWhere.onclick = function (ev) {
+					if (ev) {
+						ev.preventDefault();
+						ev.stopPropagation();
+					}
+					var idx = floatActsCol;
+					hideHeaderFloatActs();
+					if (idx < 0) return;
+					if (typeof opts.onHeaderWhere === 'function') {
+						opts.onHeaderWhere(idx, cols[idx]);
+					}
+				};
+				floatActs.appendChild(aDesc);
+				floatActs.appendChild(aWhere);
+				floatActs.onmouseenter = function () {
+					if (floatHideTimer) {
+						clearTimeout(floatHideTimer);
+						floatHideTimer = null;
+					}
+				};
+				floatActs.onmouseleave = function () {
+					scheduleHideHeaderFloatActs();
+				};
+				document.body.appendChild(floatActs);
+				return floatActs;
+			}
+
+			function positionHeaderFloatActs() {
+				if (!floatActs || !floatActsCell || floatActs.style.display === 'none') return;
+				var rect = floatActsCell.getBoundingClientRect();
+				floatActs.style.left = (rect.left + rect.width / 2) + 'px';
+				floatActs.style.top = rect.top + 'px';
+			}
+
+			function showHeaderFloatActs(colIdx, cellEl) {
+				if (floatHideTimer) {
+					clearTimeout(floatHideTimer);
+					floatHideTimer = null;
+				}
+				if (!sortable || !_isSortableCol(colIdx) || !cellEl) {
+					hideHeaderFloatActs();
+					return;
+				}
+				ensureHeaderFloatActs();
+				floatActsCol = colIdx;
+				floatActsCell = cellEl;
+				floatActs.style.display = 'inline-block';
+				positionHeaderFloatActs();
+			}
+
 			function updateHeaderSort() {
-				var i, j, cell, resizer, ch, next, label, mark, sk, titleBase;
+				var i, j, cell, resizer, ch, next, mark, sk, titleBase, nameEl, markEl, labelEl, canAct;
 				for (i = 0; i < colEls.length; i++) {
 					mark = '';
 					for (j = 0; j < sortKeys.length; j++) {
@@ -2861,20 +2970,22 @@ X = (function(w){
 							break;
 						}
 					}
-					label = (cols[i].t != null ? cols[i].t : '') + mark;
 					titleBase = cols[i].t != null ? String(cols[i].t) : '';
-					if (sortable && _isSortableCol(i)) {
+					canAct = sortable && _isSortableCol(i);
+					if (canAct) {
 						if (mark) {
 							colEls[i].title = titleBase + ' · 排序优先级 ' + (j + 1)
 								+ (sortKeys[j].dir === 1 ? ' 正序' : ' 倒序')
-								+ '（点击切换；Ctrl+点击改多列）';
+								+ '（点击切换；悬停：倒序 / 筛选）';
 						} else {
-							colEls[i].title = titleBase + ' · 点击排序；Ctrl+点击追加多列排序';
+							colEls[i].title = titleBase + ' · 点击排序；悬停可倒序或填入 WHERE';
 						}
 					} else {
 						colEls[i].title = titleBase;
 					}
 					cell = colEls[i];
+					if (canAct) cell.classList.add('is-sortable');
+					else cell.classList.remove('is-sortable');
 					resizer = cell.querySelector('.xvr-col-resizer');
 					ch = cell.firstChild;
 					while (ch) {
@@ -2884,10 +2995,23 @@ X = (function(w){
 						}
 						ch = next;
 					}
-					var tn = document.createTextNode(label);
-					if (resizer) cell.insertBefore(tn, resizer);
-					else cell.appendChild(tn);
+					labelEl = document.createElement('span');
+					labelEl.className = 'xvr-th-label';
+					nameEl = document.createElement('span');
+					nameEl.className = 'xvr-th-name';
+					nameEl.textContent = titleBase;
+					labelEl.appendChild(nameEl);
+					if (mark) {
+						markEl = document.createElement('span');
+						markEl.className = 'xvr-th-mark';
+						markEl.textContent = mark;
+						labelEl.appendChild(markEl);
+					}
+					if (resizer) cell.insertBefore(labelEl, resizer);
+					else cell.appendChild(labelEl);
 				}
+				// 排序刷新后若浮层仍开着，跟住列头
+				positionHeaderFloatActs();
 			}
 			_syncColOrder();
 			updateHeaderSort();
@@ -2915,6 +3039,7 @@ X = (function(w){
 			body.appendChild(surface);
 
 			function _syncHdrScroll() {
+				hideHeaderFloatActs();
 				hdrWrap.style.transform = 'translateX(' + (-sc.scrollLeft) + 'px)';
 				var sbw = sc.offsetWidth - sc.clientWidth;
 				if (sbw < 0) sbw = 0;
@@ -3861,6 +3986,7 @@ X = (function(w){
 			// ══════════ 窗口自适应 ══════════
 			var _resizeTimer = null;
 			function onResize() {
+				hideHeaderFloatActs();
 				if (_resizeTimer) clearTimeout(_resizeTimer);
 				_resizeTimer = setTimeout(function() { _lastST = -2; render(); }, 200);
 			}
@@ -3884,6 +4010,11 @@ X = (function(w){
 				onCellValueChange: opts.onCellValueChange || null,
 				el: el,
 				destroy: function() {
+					hideHeaderFloatActs();
+					if (floatActs && floatActs.parentNode) {
+						floatActs.parentNode.removeChild(floatActs);
+						floatActs = null;
+					}
 					_stopAutoScroll();
 					window.removeEventListener('resize', onResize);
 					if (_resizeTimer) clearTimeout(_resizeTimer);

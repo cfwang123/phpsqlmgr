@@ -4,7 +4,7 @@
  * 真实表数据：columns + rows[][] + primary_key + 分页元数据
  * where：可选条件片段（可不含 WHERE 关键字）
  * sort：服务端 ORDER BY，支持 "col:1,col2:-1" 或 [{name,dir}] 或 {keys:[...]}
- * limit 默认见 config default_table_limit（100000）；可用 page 代替 offset（1-based）
+ * limit 默认见 config default_table_limit（2000）；可用 page 代替 offset（1-based）
  */
 require_once __DIR__ . '/_db.php';
 
@@ -16,7 +16,7 @@ $table = isset($body['table']) ? trim(strval($body['table'])) : '';
 if (array_key_exists('limit', $body)) {
 	$limit = intval($body['limit']);
 } else {
-	$limit = intval(sqlmnger_cfg('default_table_limit', 100000));
+	$limit = intval(sqlmnger_cfg('default_table_limit', 2000));
 }
 $maxFetch = intval(sqlmnger_cfg('max_fetch_rows', 1000000));
 if ($maxFetch > 0 && $limit > $maxFetch) {

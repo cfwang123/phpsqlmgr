@@ -8,7 +8,7 @@
  */
 return array(
 	'app_name' => 'sqlmnger',
-	'app_version' => '1.0.2',
+	'app_version' => '1.0.3',
 	'app_key' => 'PLEASE-CHANGE-TO-A-LONG-RANDOM-SECRET-32+',
 	'debug' => false,
 
@@ -25,7 +25,7 @@ return array(
 	'sqlite_root' => dirname(__DIR__) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'sqlite',
 	'sqlite_allowed_extensions' => array('db', 'sqlite', 'sqlite3'),
 
-	'default_table_limit' => 100000,
+	'default_table_limit' => 2000,
 	'default_sql_limit' => 0,
 	'max_fetch_rows' => 1000000,
 	'unlimited_soft_max' => 2000000,

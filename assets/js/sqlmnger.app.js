@@ -6,7 +6,7 @@
  * - 中心 Tabs：打开表（数据编辑 + 结构/索引）
  */
 window.SqlmngerApp = (function () {
-	var APP_VERSION = '1.0.2';
+	var APP_VERSION = '1.0.3';
 
 	var t = {
 		start: start,

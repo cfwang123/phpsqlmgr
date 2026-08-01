@@ -87,12 +87,12 @@ window.SqlmngerTablePage = (function () {
 					'<option value="100">100</option>' +
 					'<option value="500">500</option>' +
 					'<option value="1000">1000</option>' +
-					'<option value="2000">2000</option>' +
+					'<option value="2000" selected>2000</option>' +
 					'<option value="5000">5000</option>' +
 					'<option value="10000">10000</option>' +
 					'<option value="20000">20000</option>' +
 					'<option value="50000">50000</option>' +
-					'<option value="100000" selected>100000</option>' +
+					'<option value="100000">100000</option>' +
 					'<option value="1000000">1000000</option>' +
 					'<option value="0">' + esc(_('table.unlimited')) + '</option>' +
 				'</select>' +
@@ -159,7 +159,7 @@ window.SqlmngerTablePage = (function () {
 			pendingSort: null, // 当前服务端排序（请求 ORDER BY 的源；重载/F5 保持）
 			whereClause: '', // 服务端 WHERE（不含 WHERE 关键字）
 			pendingColFilters: null, // 重载后恢复列内筛选
-			pageSize: 100000, // LIMIT，0=不限
+			pageSize: 2000, // LIMIT，0=不限
 			page: 1, // 1-based
 			totalMatched: 0,
 			pageCount: 1,
@@ -471,7 +471,7 @@ window.SqlmngerTablePage = (function () {
 		function changePageSize(n) {
 			// 允许 0=不限
 			n = parseInt(n, 10);
-			if (isNaN(n) || n < 0) n = 100000;
+			if (isNaN(n) || n < 0) n = 2000;
 			if (LIMIT_OPTS.indexOf(n) < 0) {
 				// 自定义：0 或 1..1000000
 				if (n !== 0) {
@@ -1175,7 +1175,7 @@ window.SqlmngerTablePage = (function () {
 
 			// pageSize===0 表示不限，不能用 || 回退成默认
 			var reqLimit = (state.pageSize === 0) ? 0
-				: (state.pageSize > 0 ? state.pageSize : 100000);
+				: (state.pageSize > 0 ? state.pageSize : 2000);
 			var req = {
 				database: database,
 				table: table,
@@ -1416,6 +1416,29 @@ window.SqlmngerTablePage = (function () {
 					} else {
 						doServerSortReload();
 					}
+				},
+				// Adminer：列头悬停「=」→ 填入 WHERE「列=」并聚焦
+				onHeaderWhere: function (colIdx, col) {
+					if (colIdx === 0 || (col && (col.is_select || col.field === '__sel__'))) return;
+					var name = '';
+					if (col) {
+						if (col.name != null && String(col.name) !== '') name = String(col.name);
+						else if (col.t != null && String(col.t) !== '') name = String(col.t);
+					}
+					if (!name) return;
+					// 切到数据模式（若在结构页）
+					if (state.mode !== 'data') {
+						setMode('data');
+					}
+					updateWhereUi();
+					whereInp.value = name + '=';
+					try {
+						whereInp.focus();
+						var len = whereInp.value.length;
+						if (typeof whereInp.setSelectionRange === 'function') {
+							whereInp.setSelectionRange(len, len);
+						}
+					} catch (exF) { /* */ }
 				},
 				// Ctrl/Cmd+点击单元格：进入修改模式，随后 Grid 会 startEdit 该格
 				onCtrlClickEdit: function (/* rowIdx, colIdx */) {

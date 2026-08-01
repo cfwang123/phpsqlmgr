@@ -7,7 +7,7 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ---
 
-## [1.0.2] — 2026-08-01
+## [1.0.3] — 2026-08-01
 
 ### Added
 
@@ -58,7 +58,7 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 - **Layout**: moved former `public/` contents (`index.php`, `api/`, `assets/`) to the **project root**. Document root is now the project root (no nested `public/` web root); `SQLMNGER_ROOT` resolves to the parent of `api/` (one level up).
 - Default `enabled_drivers` includes `mssql_tcp` and `mssql_net` alongside `mysql`, `sqlite`, `sqlsrv`.
-- Config sample defaults: larger table limit (`default_table_limit` 100000); `default_sql_limit` **0** (no auto LIMIT on SQL page unless set).
+- Config sample defaults: table limit (`default_table_limit` **2000**); `default_sql_limit` **0** (no auto LIMIT on SQL page unless set).
 - SQL page is no longer “single statement only”.
 - Closing the column filter row **clears all column filters** (global search kept).
 - Combobox: first open shows full list; filter/highlight only after typing.
@@ -67,6 +67,7 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ### Fixed
 
+- API fatal errors / uncaught exceptions now return a JSON error envelope (no Xdebug HTML), so the frontend can show the real message.
 - Status bar text no longer wipes the filter toggle button.
 - Combobox `oninput` not overwritten by alter-page draft sync (filter works while typing).
 - i18n pack parity: `table.wherePh` and grid status strings for all four languages.
@@ -109,6 +110,6 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ---
 
-[1.0.2]: #102---2026-08-01
+[1.0.3]: #103---2026-08-01
 [1.0.1]: #101---2026-07-25
 [1.0.0]: #100---2026-07

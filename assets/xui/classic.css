@@ -346,8 +346,16 @@ input[type=checkbox].xin,input[type=radio].xin{width:auto;height:auto;border:non
 
 /* ─── Grid ─── */
 .xvr-hdr{display:flex;flex-shrink:0;background:linear-gradient(180deg,#f9fafb 0%,#eef0f4 100%);border-bottom:1px solid var(--x-border);}
-.xvr-hdr>div{box-sizing:border-box;flex:0 0 auto;flex-shrink:0;padding:4px 6px;cursor:pointer;font-weight:bold;font-size:var(--x-font-size);border-right:1px solid var(--x-border);user-select:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:20px;transition:background .1s;}
+.xvr-hdr>div{box-sizing:border-box;flex:0 0 auto;flex-shrink:0;padding:4px 6px;cursor:pointer;font-weight:bold;font-size:var(--x-font-size);border-right:1px solid var(--x-border);user-select:none;overflow:visible;white-space:nowrap;line-height:20px;transition:background .1s;}
 .xvr-hdr>div:hover{background:var(--x-hover-bg);}
+.xvr-th-label{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top;}
+.xvr-th-name{font-weight:bold;}
+.xvr-th.is-sortable:hover .xvr-th-name{color:#c00;text-decoration:underline;}
+.xvr-th-mark{font-weight:700;color:#4b5563;}
+.xvr-th-acts{display:none;padding:1px 3px;background:#fff;border:1px solid #cbd5e1;border-radius:3px;box-shadow:0 1px 3px rgba(15,23,42,.12);line-height:1;white-space:nowrap;}
+.xvr-th-acts-float{position:fixed;display:none;transform:translate(-50%,-100%);margin-top:-3px;z-index:10050;pointer-events:auto;}
+.xvr-th-act{display:inline-block;padding:1px 4px;margin:0 1px;color:#2563eb;font-weight:700;font-size:12px;text-decoration:none;cursor:pointer;border-radius:2px;line-height:16px;}
+.xvr-th-act:hover{background:#dbeafe;color:#1d4ed8;text-decoration:none;}
 .xvr-root{flex:1;min-height:0;height:100%;width:100%;overflow:hidden;display:flex;flex-direction:column;}
 /* 表头裁剪层：纵向固定；横向用 JS translateX 跟表体 scrollLeft */
 .xvr-hdr-clip{flex-shrink:0;overflow:hidden;position:relative;width:100%;background:linear-gradient(180deg,#f9fafb 0%,#eef0f4 100%);border-bottom:1px solid var(--x-border);box-sizing:border-box;}
