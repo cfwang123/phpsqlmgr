@@ -31,7 +31,7 @@
   - SQLite — PDO SQLite（路径限制在 `sqlite_root`）
   - SQL Server（扩展）— 微软 PHP SQL Server 扩展
   - SQL Server（纯 PHP）— **纯 PHP 实现的 SQL Server 连接**（无需微软扩展；可选加密）
-  - SQL Server（.NET CLI）— Windows 助手进程 `bin/SqlmngerMsCli.exe`（.NET 4.8 SqlClient，Schannel TLS 1.2）；常驻单例 TCP 服务：PHP 需要时启动，多请求共用同一进程，无连接 10 秒后自动退出
+  - SQL Server（.NET CLI）— Windows 助手进程 `bin/SqlmngerMsCli.exe`（.NET 4.8 SqlClient，Schannel TLS 1.2）；常驻单例 TCP 服务：PHP 需要时启动，多请求共用同一进程，无连接 60 秒后自动退出（可配 `mssql_net_idle_sec`）
 - **多 Tab 多连接**：连接 ID 写入 URL `?c=…`
 - **库 / 表**：顶栏可过滤选库；左侧表树（**右键**：查看数据 / 结构 / 修改结构）
 - **Hash 路由**：恢复活动表、WHERE、排序、LIMIT、页码，以及 **模式**（`m=struct` / `m=alter`）
@@ -129,7 +129,7 @@ cp config/config.example.php config/config.php
 | `allow_empty_password` | 是否允许空密码登录（本地开发常用） |
 | `session_ttl` | Cookie 秒数（默认 7 天） |
 | `enabled_drivers` | MySQL / SQLite / SQL Server（扩展）/ SQL Server（纯 PHP）/ SQL Server（.NET CLI） |
-| `mssql_net_idle_sec` | .NET CLI 无客户端连接后自动退出秒数（默认 10） |
+| `mssql_net_idle_sec` | .NET CLI 无客户端连接后自动退出秒数（默认 60） |
 | `sqlite_root` | SQLite 路径 jail |
 | `default_table_limit` / `default_sql_limit` | 默认行数（`0` = 不限 / 不自动 LIMIT） |
 | `max_fetch_rows` / `unlimited_soft_max` | 上限 / 不限时软顶 |

@@ -14,7 +14,7 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 - **Driver `mssql_net`**: SQL Server via a **.NET Framework 4.8 helper CLI** (`bin/SqlmngerMsCli.exe`; source in `tools/SqlmngerMsCli/`). Uses `System.Data.SqlClient` + Schannel (TLS 1.2) — a good fit when PHP is old (5.5+) or its OpenSSL cannot do modern TLS.
   - **Resident singleton TCP daemon**: `Local\` mutex keeps one process per machine; listens on `127.0.0.1` random port, writes port + PID to `storage/run/SqlmngerMsCli.port`; NDJSON protocol (`connect` / `query` / `close` / `quit` / `ping` / `shutdown`).
   - **Spawn on demand**: PHP (`api/tds/MssqlNetClient.php`) probes the port file first and `ping`s; only starts the CLI (`start /B`, detached) when unreachable. Concurrent PHP requests share the same process.
-  - **Idle auto-exit**: process exits and removes the port file after `--idle` seconds (default **10**, config `mssql_net_idle_sec`) with no connected TCP client; PHP `disconnect` only closes its socket, never kills the daemon.
+  - **Idle auto-exit**: process exits and removes the port file after `--idle` seconds (default **60**, config `mssql_net_idle_sec`) with no connected TCP client; PHP `disconnect` only closes its socket, never kills the daemon.
   - **In-process connection pool**: `SqlConnection` cached per connection string across requests (`close` returns it to the pool).
   - Login UI label: **SQL Server (.NET CLI)**; available on Windows hosts with .NET 4.8 only.
 - **Driver `mssql_tcp`**: pure PHP **TCP/TDS** SQL Server client (`api/tds/`), no `sqlsrv` extension required.
@@ -51,7 +51,7 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
   - ALTER only for **changed** columns (definition or relative order); unchanged columns skipped.
 - **Hash routing**: table mode in hash `m=struct` / `m=alter` (data omits `m`).
 - **Tabs**: title is `table` when all open tables share one database; `database.table` when multiple DBs are open.
-- New config `mssql_net_idle_sec` (default 10).
+- New config `mssql_net_idle_sec` (default 60).
 - Expanded `.gitignore` for secrets, local data, and IDE noise.
 
 ### Changed

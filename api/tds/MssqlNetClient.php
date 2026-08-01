@@ -4,7 +4,7 @@
  *
  * - 需要时启动 CLI；多 PHP 请求共用同一进程（Mutex + port 文件）
  * - TCP NDJSON；CLI 内连接池复用 SqlConnection
- * - PHP disconnect 只断 TCP，不杀进程；CLI 无连接满 10 秒自动退出
+ * - PHP disconnect 只断 TCP，不杀进程；CLI 无连接满 60 秒自动退出（config mssql_net_idle_sec）
  *
  * 兼容 PHP 5.5+
  */
@@ -30,7 +30,7 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 		private $sock = null;
 
 		/** @var int 空闲退出秒数（传给 CLI） */
-		private static $idleSec = 10;
+		private static $idleSec = 60;
 
 		public function isConnected() {
 			return $this->connected;
@@ -78,7 +78,7 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 				$this->trustServerCertificate = !!sqlmnger_cfg('mssql_tcp_trust_server_certificate', true);
 			}
 			if (function_exists('sqlmnger_cfg')) {
-				$idle = intval(sqlmnger_cfg('mssql_net_idle_sec', 10));
+				$idle = intval(sqlmnger_cfg('mssql_net_idle_sec', 60));
 				if ($idle >= 2 && $idle <= 600) {
 					self::$idleSec = $idle;
 				}
@@ -115,7 +115,7 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 		}
 
 		/**
-		 * 只断开到 CLI 的 TCP；不杀常驻进程（由 CLI 空闲 10s 自退）
+		 * 只断开到 CLI 的 TCP；不杀常驻进程（由 CLI 空闲 mssql_net_idle_sec 秒自退，默认 60）
 		 */
 		public function disconnect() {
 			if (is_resource($this->sock)) {

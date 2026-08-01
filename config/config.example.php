@@ -45,5 +45,5 @@ return array(
 	// PureTLS 失败后再试 OpenSSL 流（默认关，避免远程「连接中」白等数秒）
 	'mssql_tcp_openssl_fallback' => false,
 	// mssql_net 常驻 CLI 空闲退出秒数
-	'mssql_net_idle_sec' => 10,
+	'mssql_net_idle_sec' => 60,
 );

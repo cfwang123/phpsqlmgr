@@ -8,7 +8,7 @@
  *
  * 参数：
  *   --port-file <path>   写入端口号的文件（PHP 读取）
- *   --idle <sec>         无连接空闲退出秒数，默认 10
+ *   --idle <sec>         无连接空闲退出秒数，默认 60
  *   --once               旧：stdin 单次 JSON 后退出
  */
 using System;
@@ -30,7 +30,7 @@ namespace SqlmngerMsCli
 		private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 		private static readonly object Gate = new object();
 
-		private static int idleSec = 10;
+		private static int idleSec = 60;
 		private static string portFile = "";
 		private static int activeClients;
 		private static DateTime lastActivityUtc = DateTime.UtcNow;

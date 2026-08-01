@@ -8,7 +8,7 @@
 2. **端口**：`127.0.0.1` 随机端口，写入 `--port-file`（默认由 PHP 指定 `storage/run/SqlmngerMsCli.port`）  
 3. **协议**：TCP 上每行一条 JSON（connect / query / close / quit / ping）  
 4. **连接池**：进程内按连接串缓存 `SqlConnection`，请求结束 `close` 归还  
-5. **空闲退出**：**无任何 TCP 客户端** 连续 `--idle` 秒（默认 **10**）后进程退出并删除 port 文件  
+5. **空闲退出**：**无任何 TCP 客户端** 连续 `--idle` 秒（默认 **60**）后进程退出并删除 port 文件  
 
 ## 编译
 
@@ -24,7 +24,7 @@ copy /Y tools\SqlmngerMsCli\bin\Release\SqlmngerMsCli.exe bin\SqlmngerMsCli.exe
 | 参数 | 说明 |
 |------|------|
 | `--port-file path` | 写入端口与 PID |
-| `--idle 10` | 无连接空闲退出秒数 |
+| `--idle 60` | 无连接空闲退出秒数 |
 | `--once` | 调试：stdin 单次 JSON |
 
 ## PHP

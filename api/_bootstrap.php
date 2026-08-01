@@ -100,7 +100,7 @@ function sqlmnger_config_defaults() {
 		/** PureTLS 失败后是否再试 OpenSSL 流桥（默认 false，加快失败回退） */
 		'mssql_tcp_openssl_fallback' => false,
 		/** mssql_net 常驻 CLI 无连接后自动退出秒数 */
-		'mssql_net_idle_sec' => 10,
+		'mssql_net_idle_sec' => 60,
 	);
 }
 
