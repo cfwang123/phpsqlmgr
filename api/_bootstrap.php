@@ -66,10 +66,10 @@ function sqlmnger_cfg($key, $default = null) {
 function sqlmnger_config_defaults() {
 	return array(
 		'app_name' => 'sqlmnger',
-		'app_version' => '1.0.3',
+		'app_version' => '1.0.4',
 		'app_key' => 'dev-only-key-change-in-production-32b',
 		'debug' => true,
-		'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp', 'mssql_net'),
+		'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp', 'mssql_net', 'oracle_net'),
 		'session_name' => 'SQLMNGERSESSID',
 		'session_ttl' => 604800,
 		'login_max_attempts' => 10,
@@ -617,14 +617,21 @@ function sqlmnger_try_connect($conn) {
 	if ($driver === 'mssql_net') {
 		return sqlmnger_try_mssql_net($conn);
 	}
+	if ($driver === 'oracle_net') {
+		return sqlmnger_try_oracle_net($conn);
+	}
 	return array('ok' => false, 'message' => '不支持的引擎: ' . $driver, 'server_version' => '', 'driver' => $driver);
 }
 
 /**
- * SQL Server 方言族（官方 sqlsrv 扩展 或 自研 TCP/TDS）
+ * SQL Server 方言族（官方 sqlsrv 扩展 或 自研 TCP/TDS / .NET CLI）
  */
 function sqlmnger_is_mssql_family($driver) {
 	return $driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net' || $driver === 'mssql';
+}
+
+function sqlmnger_is_oracle_family($driver) {
+	return $driver === 'oracle_net' || $driver === 'oracle';
 }
 
 function sqlmnger_try_mysql($conn) {
@@ -977,6 +984,65 @@ function sqlmnger_try_mssql_net($conn) {
 }
 
 /**
+ * Oracle .NET CLI（Oracle.ManagedDataAccess；database = Service Name）
+ */
+function sqlmnger_try_oracle_net($conn) {
+	require_once __DIR__ . '/tds/MssqlNetClient.php';
+	if (!SqlmngerMssqlNetClient::isAvailable()) {
+		return array(
+			'ok' => false,
+			'message' => '未找到 bin/SqlmngerMsCli.exe（需 .NET Framework 4.8，Windows）',
+			'server_version' => '',
+			'driver' => 'oracle_net',
+		);
+	}
+	if (!SqlmngerMssqlNetClient::hasOracleDll()) {
+		return array(
+			'ok' => false,
+			'message' => '未找到 bin/Oracle.ManagedDataAccess.dll（与 SqlmngerMsCli.exe 同目录）',
+			'server_version' => '',
+			'driver' => 'oracle_net',
+		);
+	}
+	$host = isset($conn['host']) ? $conn['host'] : '127.0.0.1';
+	$port = isset($conn['port']) ? intval($conn['port']) : 1521;
+	if ($port <= 0) {
+		$port = 1521;
+	}
+	$user = isset($conn['user']) ? $conn['user'] : '';
+	$pass = isset($conn['password']) ? $conn['password'] : '';
+	$db = isset($conn['database']) ? $conn['database'] : '';
+	$cto = intval(sqlmnger_cfg('connect_timeout_sec', 8));
+	if ($cto < 1) {
+		$cto = 8;
+	}
+	$opts = array('engine' => 'oracle');
+	if (isset($conn['sid']) && strval($conn['sid']) !== '') {
+		$opts['sid'] = $conn['sid'];
+	}
+	$client = SqlmngerMssqlNetClient::create('oracle');
+	$ok = $client->connect($host, $port, $user, $pass, $db, $cto * 1000, $opts);
+	if (!$ok) {
+		$msg = $client->getLastError();
+		if ($msg === null || $msg === '') {
+			$msg = 'Oracle .NET CLI 连接失败';
+		}
+		$client->disconnect();
+		return array('ok' => false, 'message' => $msg, 'server_version' => '', 'driver' => 'oracle_net');
+	}
+	$ver = $client->getServerVersion();
+	$tls = $client->isTlsEnabled();
+	$client->disconnect();
+	return array(
+		'ok' => true,
+		'message' => 'ok',
+		'server_version' => $ver !== null ? $ver : '',
+		'driver' => 'oracle_net',
+		'tls' => $tls,
+	);
+}
+
+/**
  * 多连接会话（类似 Adminer：连接标识在 URL ?c=xxxx）
  * 结构：$_SESSION['sqlmnger_conns'][$connId] = 连接数据
  * 兼容旧版：自动迁移 sqlmnger_conn
@@ -1131,6 +1197,10 @@ function sqlmnger_enabled_drivers() {
 			require_once __DIR__ . '/tds/MssqlNetClient.php';
 			$avail = SqlmngerMssqlNetClient::isAvailable();
 			$hint = $avail ? '.NET 4.8 SqlClient' : '缺少 bin/SqlmngerMsCli.exe（Windows + .NET 4.8）';
+		} elseif ($d === 'oracle_net') {
+			require_once __DIR__ . '/tds/MssqlNetClient.php';
+			$avail = SqlmngerMssqlNetClient::isOracleAvailable();
+			$hint = $avail ? '.NET Oracle ManagedDataAccess' : '缺少 SqlmngerMsCli.exe 或 Oracle.ManagedDataAccess.dll';
 		}
 		$out[] = array(
 			'id' => $d,
@@ -1157,6 +1227,9 @@ function sqlmnger_driver_label($d) {
 	}
 	if ($d === 'mssql_net') {
 		return 'SQL Server (.NET CLI)';
+	}
+	if ($d === 'oracle_net') {
+		return 'Oracle (.NET CLI)';
 	}
 	return $d;
 }

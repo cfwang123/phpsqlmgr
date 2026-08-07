@@ -3,8 +3,9 @@
  *
  * - 单例：同机仅一个实例（Mutex）
  * - 监听 127.0.0.1 随机端口，写 port 文件；stdout: READY <port>
- * - 多客户端并发 TCP，每连接内 NDJSON；进程内可按连接串缓存 SqlConnection
- * - 无活动连接满 idle 秒（默认 10）后自动退出
+ * - 多客户端并发 TCP，每连接内 NDJSON；进程内可按连接串缓存 IDbConnection
+ * - engine=mssql（默认）| oracle（Oracle.ManagedDataAccess，Service Name）
+ * - 无活动连接满 idle 秒（默认 60）后自动退出
  *
  * 参数：
  *   --port-file <path>   写入端口号的文件（PHP 读取）
@@ -21,6 +22,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
+using Oracle.ManagedDataAccess.Client;
+using Oracle.ManagedDataAccess.Types;
 
 namespace SqlmngerMsCli
 {
@@ -41,8 +44,9 @@ namespace SqlmngerMsCli
 
 		private sealed class PoolEntry
 		{
-			public SqlConnection Conn;
+			public IDbConnection Conn;
 			public bool Tls;
+			public string Engine;
 			public DateTime LastUseUtc;
 		}
 
@@ -192,7 +196,7 @@ namespace SqlmngerMsCli
 			{
 				// 本 TCP 会话上「逻辑会话」持有的连接键（disconnect 时归还池）
 				string heldKey = null;
-				SqlConnection heldConn = null;
+				IDbConnection heldConn = null;
 				bool heldTls = false;
 
 				string line;
@@ -274,87 +278,147 @@ namespace SqlmngerMsCli
 			}
 		}
 
+		private static string GetEngine(Dictionary<string, object> req)
+		{
+			string e = GetStr(req, "engine", "");
+			if (string.IsNullOrEmpty(e)) e = GetStr(req, "dbms", "");
+			e = (e ?? "").Trim().ToLowerInvariant();
+			if (e == "oracle" || e == "ora" || e == "oracle_net") return "oracle";
+			return "mssql";
+		}
+
 		private static Dictionary<string, object> OpenForSession(
 			Dictionary<string, object> req,
 			out string key,
-			out SqlConnection conn,
+			out IDbConnection conn,
 			out bool tls)
 		{
 			key = null;
 			conn = null;
 			tls = false;
+			string engine = GetEngine(req);
 			string cs;
 			bool encryptUsed;
 			string err;
-			if (!TryBuildCs(req, out cs, out encryptUsed, out err))
-				return ErrDict("connect", err, false);
+			if (engine == "oracle")
+			{
+				if (!TryBuildOracleCs(req, out cs, out err))
+					return ErrDict("connect", err, false);
+				encryptUsed = false;
+			}
+			else
+			{
+				if (!TryBuildCs(req, out cs, out encryptUsed, out err))
+					return ErrDict("connect", err, false);
+			}
+			// 池键含引擎，避免 mssql/oracle 同串冲突
+			string poolKey = engine + "|" + cs;
 
 			int timeout = GetInt(req, "timeout", 15);
 			if (timeout < 1) timeout = 15;
 
-			// 先从池取（进程内复用，避免每次 PHP 请求都 SqlConnection.Open）
 			lock (Gate)
 			{
 				PoolEntry pe;
-				if (Pool.TryGetValue(cs, out pe) && pe.Conn != null)
+				if (Pool.TryGetValue(poolKey, out pe) && pe.Conn != null)
 				{
 					if (pe.Conn.State == ConnectionState.Open)
 					{
-						key = cs;
+						key = poolKey;
 						conn = pe.Conn;
 						tls = pe.Tls;
-						Pool.Remove(cs);
+						Pool.Remove(poolKey);
 						pe.LastUseUtc = DateTime.UtcNow;
 						var ok = OkEmpty(tls);
-						// 池命中不查版本（PHP 侧会缓存首次 connect 的 server_version）
 						ok["server_version"] = "";
 						ok["tls"] = tls;
 						ok["pooled"] = true;
+						ok["engine"] = engine;
 						return ok;
 					}
 					try { pe.Conn.Dispose(); } catch { }
-					Pool.Remove(cs);
+					Pool.Remove(poolKey);
 				}
 			}
 
 			try
 			{
-				var c = new SqlConnection(cs);
+				IDbConnection c;
+				if (engine == "oracle")
+					c = new OracleConnection(cs);
+				else
+					c = new SqlConnection(cs);
 				c.Open();
-				// 仅冷连接查一次版本；need_version=false 时可跳过额外往返
+
 				string ver = "";
 				bool needVer = GetBool(req, "need_version", true);
 				if (needVer)
-				{
-					using (var cmd = new SqlCommand("SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(32))", c))
-					{
-						cmd.CommandTimeout = timeout;
-						object o = cmd.ExecuteScalar();
-						if (o != null && o != DBNull.Value) ver = Convert.ToString(o);
-					}
-				}
-				key = cs;
+					ver = ProbeVersion(c, engine, timeout);
+
+				key = poolKey;
 				conn = c;
 				tls = encryptUsed;
 				var resp = OkEmpty(tls);
 				resp["server_version"] = ver;
 				resp["tls"] = encryptUsed;
 				resp["pooled"] = false;
+				resp["engine"] = engine;
 				return resp;
 			}
 			catch (Exception ex)
 			{
-				string encMode = GetStr(req, "encrypt", "auto").ToLowerInvariant();
-				if (encMode == "auto" && encryptUsed)
+				if (engine != "oracle")
 				{
-					req["encrypt"] = "disable";
-					return OpenForSession(req, out key, out conn, out tls);
+					string encMode = GetStr(req, "encrypt", "auto").ToLowerInvariant();
+					if (encMode == "auto" && encryptUsed)
+					{
+						req["encrypt"] = "disable";
+						return OpenForSession(req, out key, out conn, out tls);
+					}
 				}
-				return ErrDict("connect", ex.Message, false);
+				return ErrDict("connect", FlattenEx(ex), false);
 			}
 		}
 
-		private static void ReleaseHeld(ref string key, ref SqlConnection conn, ref bool tls)
+		private static string ProbeVersion(IDbConnection c, string engine, int timeout)
+		{
+			try
+			{
+				if (engine == "oracle")
+				{
+					try
+					{
+						using (var cmd = c.CreateCommand())
+						{
+							cmd.CommandText = "SELECT BANNER FROM V$VERSION WHERE ROWNUM = 1";
+							cmd.CommandTimeout = timeout;
+							object o = cmd.ExecuteScalar();
+							if (o != null && o != DBNull.Value) return Convert.ToString(o);
+						}
+					}
+					catch { }
+					using (var cmd = c.CreateCommand())
+					{
+						cmd.CommandText = "SELECT BANNER FROM PRODUCT_COMPONENT_VERSION WHERE ROWNUM = 1";
+						cmd.CommandTimeout = timeout;
+						object o = cmd.ExecuteScalar();
+						if (o != null && o != DBNull.Value) return Convert.ToString(o);
+					}
+					return "";
+				}
+				using (var cmd = c.CreateCommand())
+				{
+					cmd.CommandText = "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(32))";
+					cmd.CommandTimeout = timeout;
+					object o = cmd.ExecuteScalar();
+					if (o != null && o != DBNull.Value) return Convert.ToString(o);
+				}
+			}
+			catch { }
+			return "";
+		}
+
+		private static void ReleaseHeld(ref string key, ref IDbConnection conn, ref bool tls)
 		{
 			if (conn == null)
 			{
@@ -362,12 +426,10 @@ namespace SqlmngerMsCli
 				tls = false;
 				return;
 			}
-			// 连接仍可用则放回池，否则丢掉
 			if (!string.IsNullOrEmpty(key) && conn.State == ConnectionState.Open)
 			{
 				lock (Gate)
 				{
-					// 池内已有同 key 则关当前
 					if (Pool.ContainsKey(key))
 					{
 						try { conn.Close(); } catch { }
@@ -375,10 +437,13 @@ namespace SqlmngerMsCli
 					}
 					else
 					{
+						string eng = "mssql";
+						if (key.StartsWith("oracle|", StringComparison.OrdinalIgnoreCase)) eng = "oracle";
 						Pool[key] = new PoolEntry
 						{
 							Conn = conn,
 							Tls = tls,
+							Engine = eng,
 							LastUseUtc = DateTime.UtcNow
 						};
 					}
@@ -394,7 +459,7 @@ namespace SqlmngerMsCli
 			tls = false;
 		}
 
-		private static Dictionary<string, object> ExecQuery(SqlConnection conn, bool tls, Dictionary<string, object> req)
+		private static Dictionary<string, object> ExecQuery(IDbConnection conn, bool tls, Dictionary<string, object> req)
 		{
 			string sql = GetStr(req, "sql", "");
 			if (string.IsNullOrEmpty(sql))
@@ -403,7 +468,6 @@ namespace SqlmngerMsCli
 			int timeout = GetInt(req, "timeout", 60);
 			if (timeout < 1) timeout = 60;
 
-			// row_format=array（默认）：rows 为二维数组，JSON 更小更快；object 兼容旧字典行
 			string rowFmt = GetStr(req, "row_format", "array").ToLowerInvariant();
 			bool asArray = rowFmt != "object" && rowFmt != "dict";
 
@@ -412,8 +476,9 @@ namespace SqlmngerMsCli
 				if (conn.State != ConnectionState.Open)
 					conn.Open();
 
-				using (var cmd = new SqlCommand(sql, conn))
+				using (var cmd = conn.CreateCommand())
 				{
+					cmd.CommandText = sql;
 					cmd.CommandTimeout = timeout;
 					var cols = new List<string>();
 					var rowsArr = asArray ? new List<object[]>(64) : null;
@@ -473,6 +538,7 @@ namespace SqlmngerMsCli
 					resp["rows"] = asArray ? (object)rowsArr : rowsDict;
 					resp["row_format"] = asArray ? "array" : "object";
 					resp["rows_affected"] = affected;
+					resp["engine"] = GetEngine(req);
 					return resp;
 				}
 			}
@@ -567,7 +633,7 @@ namespace SqlmngerMsCli
 			if (nl > 0) raw = raw.Substring(0, nl).Trim();
 			var req = Json.Deserialize<Dictionary<string, object>>(raw);
 			string key;
-			SqlConnection conn;
+			IDbConnection conn;
 			bool tls;
 			var cr = OpenForSession(req, out key, out conn, out tls);
 			if (!IsTrue(cr, "ok"))
@@ -597,6 +663,52 @@ namespace SqlmngerMsCli
 		{
 			w.WriteLine(Json.Serialize(obj));
 			w.Flush();
+		}
+
+		private static bool TryBuildOracleCs(Dictionary<string, object> req, out string cs, out string err)
+		{
+			cs = null;
+			err = null;
+			string host = GetStr(req, "host", "127.0.0.1");
+			if (string.IsNullOrEmpty(host)) host = "127.0.0.1";
+			int port = GetInt(req, "port", 1521);
+			if (port <= 0) port = 1521;
+			string user = GetStr(req, "user", "");
+			string pass = GetStr(req, "password", "");
+			// database = Service Name（主）；sid 可选
+			string service = GetStr(req, "database", "");
+			if (string.IsNullOrEmpty(service)) service = GetStr(req, "service", "");
+			if (string.IsNullOrEmpty(service)) service = GetStr(req, "service_name", "");
+			string sid = GetStr(req, "sid", "");
+			int timeout = GetInt(req, "timeout", 15);
+			if (timeout < 1) timeout = 15;
+
+			string dataSource;
+			if (!string.IsNullOrEmpty(sid) && string.IsNullOrEmpty(service))
+			{
+				dataSource = "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=" + host
+					+ ")(PORT=" + port + "))(CONNECT_DATA=(SID=" + sid + ")))";
+			}
+			else
+			{
+				if (string.IsNullOrEmpty(service))
+				{
+					err = "缺少 Oracle Service Name（database）";
+					return false;
+				}
+				// EZConnect：host:port/service_name
+				dataSource = host + ":" + port + "/" + service;
+			}
+
+			var sb = new StringBuilder(256);
+			sb.Append("User Id=").Append(EscapeCs(user)).Append(";");
+			sb.Append("Password=").Append(EscapeCs(pass)).Append(";");
+			sb.Append("Data Source=").Append(dataSource).Append(";");
+			sb.Append("Connection Timeout=").Append(timeout).Append(";");
+			sb.Append("Pooling=true;");
+			sb.Append("Max Pool Size=20;");
+			cs = sb.ToString();
+			return true;
 		}
 
 		private static bool TryBuildCs(Dictionary<string, object> req, out string cs, out bool encryptUsed, out string err)
@@ -634,7 +746,6 @@ namespace SqlmngerMsCli
 			sb.Append("Encrypt=").Append(encrypt ? "True" : "False").Append(";");
 			if (encrypt && trust)
 				sb.Append("TrustServerCertificate=True;");
-			// 进程级池复用，SqlClient 池可开
 			sb.Append("Pooling=True;");
 			sb.Append("Max Pool Size=20;");
 			sb.Append("Application Name=SqlmngerMsCli;");
@@ -656,6 +767,57 @@ namespace SqlmngerMsCli
 			if (v is bool || v is byte || v is sbyte || v is short || v is ushort
 				|| v is int || v is uint || v is long || v is ulong || v is float || v is double || v is decimal)
 				return v;
+			// Oracle 托管类型
+			try
+			{
+				if (v is OracleDecimal)
+				{
+					var od = (OracleDecimal)v;
+					if (od.IsNull) return null;
+					if (od.IsInt) return od.ToInt64();
+					return od.ToDouble();
+				}
+				if (v is OracleDate)
+				{
+					var od = (OracleDate)v;
+					if (od.IsNull) return null;
+					return od.Value.ToString("yyyy-MM-dd HH:mm:ss.fff");
+				}
+				if (v is OracleTimeStamp)
+				{
+					var ot = (OracleTimeStamp)v;
+					if (ot.IsNull) return null;
+					return ot.Value.ToString("yyyy-MM-dd HH:mm:ss.fff");
+				}
+				if (v is OracleString)
+				{
+					var os = (OracleString)v;
+					if (os.IsNull) return null;
+					return os.Value;
+				}
+				if (v is OracleBinary)
+				{
+					var ob = (OracleBinary)v;
+					if (ob.IsNull) return null;
+					return Convert.ToBase64String(ob.Value);
+				}
+				if (v is OracleClob)
+				{
+					var oc = (OracleClob)v;
+					if (oc.IsNull) return null;
+					return oc.Value;
+				}
+				if (v is OracleBlob)
+				{
+					var ob = (OracleBlob)v;
+					if (ob.IsNull) return null;
+					return Convert.ToBase64String(ob.Value);
+				}
+			}
+			catch
+			{
+				// fall through
+			}
 			return Convert.ToString(v);
 		}
 
@@ -694,6 +856,22 @@ namespace SqlmngerMsCli
 			resp["rows_affected"] = 0;
 			resp["messages"] = new List<object>();
 			return resp;
+		}
+
+		private static string FlattenEx(Exception ex)
+		{
+			if (ex == null) return "error";
+			var parts = new List<string>();
+			Exception cur = ex;
+			int depth = 0;
+			while (cur != null && depth < 8)
+			{
+				if (!string.IsNullOrEmpty(cur.Message))
+					parts.Add(cur.Message);
+				cur = cur.InnerException;
+				depth++;
+			}
+			return string.Join(" | ", parts.ToArray());
 		}
 
 		private static bool IsTrue(Dictionary<string, object> d, string key)

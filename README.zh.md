@@ -2,7 +2,7 @@
 
 轻量 Web 数据库管理（MySQL / SQLite / SQL Server），交互参考 Adminer。
 
-**版本**：v1.0.3 · **状态**：可运行原型 / 接近 MVP 主体
+**版本**：v1.0.4 · **状态**：可运行原型 / 接近 MVP 主体
 
 > English: [README.md](README.md) · 变更：[CHANGELOG.md](CHANGELOG.md)
 
@@ -32,6 +32,7 @@
   - SQL Server（扩展）— 微软 PHP SQL Server 扩展
   - SQL Server（纯 PHP）— **纯 PHP 实现的 SQL Server 连接**（无需微软扩展；可选加密）
   - SQL Server（.NET CLI）— Windows 助手进程 `bin/SqlmngerMsCli.exe`（.NET 4.8 SqlClient，Schannel TLS 1.2）；常驻单例 TCP 服务：PHP 需要时启动，多请求共用同一进程，无连接 60 秒后自动退出（可配 `mssql_net_idle_sec`）
+  - Oracle（.NET CLI）— 同一 `SqlmngerMsCli` 进程（`engine=oracle`，exe 旁需 `Oracle.ManagedDataAccess.dll` 及其依赖 DLL）；登录以 **Service Name** 为主（`host:port/service`，默认端口 1521）；驱动 `oracle_net` 支持库表浏览 / SQL / 分页网格与增删改
 - **多 Tab 多连接**：连接 ID 写入 URL `?c=…`
 - **库 / 表**：顶栏可过滤选库；左侧表树（**右键**：查看数据 / 结构 / 修改结构）
 - **Hash 路由**：恢复活动表、WHERE、排序、LIMIT、页码，以及 **模式**（`m=struct` / `m=alter`）
@@ -129,7 +130,7 @@ cp config/config.example.php config/config.php
 | `allow_empty_password` | 是否允许空密码登录（本地开发常用） |
 | `session_ttl` | Cookie 秒数（默认 7 天） |
 | `enabled_drivers` | MySQL / SQLite / SQL Server（扩展）/ SQL Server（纯 PHP）/ SQL Server（.NET CLI） |
-| `mssql_net_idle_sec` | .NET CLI 无客户端连接后自动退出秒数（默认 60） |
+| `mssql_net_idle_sec` | .NET CLI 无客户端连接后自动退出秒数（默认 60；`mssql_net` 与 `oracle_net` 共用） |
 | `sqlite_root` | SQLite 路径 jail |
 | `default_table_limit` / `default_sql_limit` | 默认行数（`0` = 不限 / 不自动 LIMIT） |
 | `max_fetch_rows` / `unlimited_soft_max` | 上限 / 不限时软顶 |

@@ -65,17 +65,20 @@ pnpm-lock.yaml
 
 # ── .NET build intermediates (tools/SqlmngerMsCli) ───────
 # obj/ = MSBuild intermediates; tools bin/ = compiler output.
-# NOTE: /bin/SqlmngerMsCli.exe stays committed on purpose (copied
-# from the tools build) for zero-step deploy — the PHP mssql_net
-# driver needs it at runtime.
+# tools/ 下的 dll/exe（含 lib/Oracle.ManagedDataAccess 及依赖）不上传 GitHub；
+# 本地放到 tools/SqlmngerMsCli/lib/ 后 `slx SqlmngerMsCli rebuild` 同步到 /bin/。
+# NOTE: 项目根 /bin/ 运行时产物仍可按需提交，供零步骤部署 mssql_net / oracle_net。
 tools/SqlmngerMsCli/obj/
 tools/SqlmngerMsCli/bin/
+tools/**/*.dll
+tools/**/*.exe
 *.pdb
 
 # Local release archives (packaging by-products)
 /*.7z
 /*.zip
 /*.rar
+/release/
 
 # ── IDE / OS ─────────────────────────────────────────────
 .idea/

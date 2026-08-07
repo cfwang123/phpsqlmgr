@@ -1,11 +1,45 @@
 <?php
 /**
- * 已登录会话下的真实库操作（MySQL / SQLite / SQL Server）
+ * 已登录会话下的真实库操作（MySQL / SQLite / SQL Server / Oracle）
  * 依赖 _bootstrap.php
  * 兼容 PHP 5.5.12+
  */
 
 require_once __DIR__ . '/_bootstrap.php';
+
+/**
+ * Oracle 限定表名："SCHEMA"."TABLE"；schema 空则仅表名
+ */
+function sqlmnger_oracle_qtable($driver, $schema, $table) {
+	$qTable = sqlmnger_ident_quote($driver, $table);
+	$schema = strval($schema);
+	if ($schema === '') {
+		return $qTable;
+	}
+	return sqlmnger_ident_quote($driver, $schema) . '.' . $qTable;
+}
+
+/**
+ * 解析 Oracle schema：优先 $database；空则查 USER
+ */
+function sqlmnger_oracle_resolve_schema($h, $database) {
+	$schema = trim(strval($database));
+	if ($schema !== '') {
+		return $schema;
+	}
+	if (isset($h['database']) && strval($h['database']) !== '') {
+		// open_handle 可能把当前 schema 放在 database 字段（非 Service Name）
+		$cand = trim(strval($h['database']));
+		if ($cand !== '' && (!isset($h['service_name']) || strcasecmp($cand, strval($h['service_name'])) !== 0)) {
+			return $cand;
+		}
+	}
+	$r = sqlmnger_query_all($h, 'SELECT USER FROM DUAL', array());
+	if (!empty($r['rows'][0][0])) {
+		return strval($r['rows'][0][0]);
+	}
+	return '';
+}
 
 /**
  * 解密得到完整连接数组（含 password 明文，仅服务端内存使用）
@@ -239,6 +273,47 @@ function sqlmnger_open_handle($databaseOverride) {
 		);
 	}
 
+	// Oracle .NET CLI（Oracle.ManagedDataAccess；database 登录=Service Name，进库后 schema 列表）
+	if ($driver === 'oracle_net') {
+		require_once __DIR__ . '/tds/MssqlNetClient.php';
+		$host = $c['host'] !== '' ? $c['host'] : '127.0.0.1';
+		$port = $c['port'] > 0 ? $c['port'] : 1521;
+		$cto = intval(sqlmnger_cfg('connect_timeout_sec', 8));
+		if ($cto < 1) {
+			$cto = 8;
+		}
+		// 连接必须用登录时的 Service Name；override 仅为当前 schema（勿当 service）
+		$service = $c['database'];
+		$schema = ($databaseOverride !== null && $databaseOverride !== '')
+			? strval($databaseOverride)
+			: '';
+		$opts = array('engine' => 'oracle');
+		$client = SqlmngerMssqlNetClient::create('oracle');
+		$ok = $client->connect($host, $port, $c['user'], $c['password'], $service, $cto * 1000, $opts);
+		if (!$ok) {
+			$msg = $client->getLastError();
+			if ($msg === null || $msg === '') {
+				$msg = 'Oracle .NET CLI 连接失败';
+			}
+			sqlmnger_json_err('CONNECT', '打开连接失败', 500, $msg);
+		}
+		return array(
+			'type' => 'tds',
+			'handle' => $client,
+			'driver' => 'oracle_net',
+			'database' => $schema !== '' ? $schema : $service,
+			'service_name' => $service,
+			'tls' => $client->isTlsEnabled(),
+			'close' => function () use ($client) {
+				try {
+					$client->disconnect();
+				} catch (Exception $e) {
+					// ignore
+				}
+			},
+		);
+	}
+
 	sqlmnger_json_err('DRIVER', '不支持的引擎', 400, $driver);
 	return null;
 }
@@ -256,19 +331,23 @@ function sqlmnger_ident_quote($driver, $name) {
 	if ($driver === 'mysql') {
 		return '`' . str_replace('`', '``', $name) . '`';
 	}
-	if ($driver === 'sqlite') {
+	if ($driver === 'sqlite' || sqlmnger_is_oracle_family($driver)) {
 		return '"' . str_replace('"', '""', $name) . '"';
 	}
-	// sqlsrv / mssql_tcp
+	// sqlsrv / mssql_tcp / mssql_net
 	return '[' . str_replace(']', ']]', $name) . ']';
 }
 
 /**
  * 将 ? 占位参数内联到 SQL（TDS 无 prepared statement）
+ * @param callable|string|null $quoteFn 默认 sqlmnger_tds_quote_value；Oracle 用 sqlmnger_oracle_quote_value
  */
-function sqlmnger_tds_inline_params($sql, $params) {
+function sqlmnger_tds_inline_params($sql, $params, $quoteFn = null) {
 	if (!is_array($params) || count($params) === 0) {
 		return $sql;
+	}
+	if ($quoteFn === null || $quoteFn === '') {
+		$quoteFn = 'sqlmnger_tds_quote_value';
 	}
 	$sql = strval($sql);
 	$out = '';
@@ -289,7 +368,7 @@ function sqlmnger_tds_inline_params($sql, $params) {
 			continue;
 		}
 		if (!$inS && $ch === '?' && $pi < count($params)) {
-			$out .= sqlmnger_tds_quote_value($params[$pi]);
+			$out .= call_user_func($quoteFn, $params[$pi]);
 			$pi++;
 			continue;
 		}
@@ -319,6 +398,32 @@ function sqlmnger_tds_quote_value($v) {
 	return "N'" . str_replace("'", "''", $s) . "'";
 }
 
+/** Oracle 字符串字面量：'...'（非 N'...'） */
+function sqlmnger_oracle_quote_value($v) {
+	if ($v === null) {
+		return 'NULL';
+	}
+	if (is_bool($v)) {
+		return $v ? '1' : '0';
+	}
+	if (is_int($v) || is_float($v)) {
+		return strval($v);
+	}
+	if (is_array($v) && array_key_exists(0, $v)) {
+		return sqlmnger_oracle_quote_value($v[0]);
+	}
+	$s = strval($v);
+	return "'" . str_replace("'", "''", $s) . "'";
+}
+
+/** 按驱动选 TDS 参数引用函数名 */
+function sqlmnger_tds_quote_fn_for_driver($driver) {
+	if (sqlmnger_is_oracle_family($driver)) {
+		return 'sqlmnger_oracle_quote_value';
+	}
+	return 'sqlmnger_tds_quote_value';
+}
+
 /**
  * @param SqlmngerTdsClient $client
  * @return array columns + rows[][]
@@ -328,6 +433,27 @@ function sqlmnger_tds_query_all($client, $sql) {
 	if (!empty($r['error'])) {
 		sqlmnger_json_err('SQL', '查询失败', 400, $r['error']);
 	}
+	return sqlmnger_tds_normalize_result($r);
+}
+
+/**
+ * TDS 软查询：失败返回 false（不 exit），用于方言回退
+ * @return array|false
+ */
+function sqlmnger_tds_query_all_soft($client, $sql) {
+	$r = $client->execute($sql);
+	if (!empty($r['error'])) {
+		return false;
+	}
+	return sqlmnger_tds_normalize_result($r);
+}
+
+/**
+ * 将 CLI execute 结果规范为 columns + rows[][]
+ * @param array $r
+ * @return array
+ */
+function sqlmnger_tds_normalize_result($r) {
 	$cols = isset($r['columns']) && is_array($r['columns']) ? $r['columns'] : array();
 	$rows = array();
 	$rowFmt = isset($r['row_format']) ? strval($r['row_format']) : '';
@@ -424,11 +550,12 @@ function sqlmnger_query_all($h, $sql, $params) {
 		}
 	}
 
-	// 自研 TCP/TDS
+	// 自研 TCP/TDS / .NET CLI
 	if ($h['type'] === 'tds') {
 		/** @var SqlmngerTdsClient $client */
 		$client = $h['handle'];
-		$sqlRun = sqlmnger_tds_inline_params($sql, $params);
+		$qfn = sqlmnger_tds_quote_fn_for_driver(isset($h['driver']) ? $h['driver'] : '');
+		$sqlRun = sqlmnger_tds_inline_params($sql, $params, $qfn);
 		return sqlmnger_tds_query_all($client, $sqlRun);
 	}
 
@@ -533,7 +660,8 @@ function sqlmnger_exec($h, $sql, $params) {
 	if ($h['type'] === 'tds') {
 		/** @var SqlmngerTdsClient $client */
 		$client = $h['handle'];
-		$sqlRun = sqlmnger_tds_inline_params($sql, $params);
+		$qfn = sqlmnger_tds_quote_fn_for_driver(isset($h['driver']) ? $h['driver'] : '');
+		$sqlRun = sqlmnger_tds_inline_params($sql, $params, $qfn);
 		return sqlmnger_tds_exec($client, $sqlRun);
 	}
 	$handle = $h['handle'];
@@ -588,7 +716,28 @@ function sqlmnger_list_databases($h) {
 	if ($driver === 'sqlite') {
 		return array($h['database'] !== '' ? $h['database'] : 'main');
 	}
-	// sqlsrv
+	// Oracle：进库后「库列表」= schema（用户）列表
+	if (sqlmnger_is_oracle_family($driver)) {
+		$list = array();
+		$r = null;
+		if ($h['type'] === 'tds') {
+			$r = sqlmnger_tds_query_all_soft($h['handle'], 'SELECT USERNAME FROM ALL_USERS ORDER BY 1');
+			if ($r === false) {
+				$r = sqlmnger_tds_query_all_soft($h['handle'], 'SELECT USER FROM DUAL');
+			}
+		}
+		if ($r === null || $r === false) {
+			// 非 tds 或软查均失败：硬查 USER
+			$r = sqlmnger_query_all($h, 'SELECT USER FROM DUAL', array());
+		}
+		foreach ($r['rows'] as $row) {
+			if (isset($row[0]) && strval($row[0]) !== '') {
+				$list[] = strval($row[0]);
+			}
+		}
+		return $list;
+	}
+	// sqlsrv / mssql_*
 	$r = sqlmnger_query_all($h, 'SELECT name FROM sys.databases ORDER BY name', array());
 	$list = array();
 	foreach ($r['rows'] as $row) {
@@ -627,6 +776,37 @@ function sqlmnger_list_tables($h, $database) {
 			$out[] = array(
 				'name' => $row[0],
 				'type' => isset($row[1]) ? $row[1] : 'table',
+				'engine' => null,
+				'rows_est' => null,
+				'comment' => null,
+			);
+		}
+		return $out;
+	}
+	// Oracle：schema = $database（空则当前 USER）
+	if (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$owner = strtoupper($schema);
+		$out = array();
+		$sql = 'SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = ? ORDER BY TABLE_NAME';
+		$r = sqlmnger_query_all($h, $sql, array($owner));
+		foreach ($r['rows'] as $row) {
+			$out[] = array(
+				'name' => $row[0],
+				'type' => 'table',
+				'schema' => $schema,
+				'engine' => null,
+				'rows_est' => null,
+				'comment' => null,
+			);
+		}
+		$sql2 = 'SELECT VIEW_NAME FROM ALL_VIEWS WHERE OWNER = ? ORDER BY VIEW_NAME';
+		$r2 = sqlmnger_query_all($h, $sql2, array($owner));
+		foreach ($r2['rows'] as $row) {
+			$out[] = array(
+				'name' => $row[0],
+				'type' => 'view',
+				'schema' => $schema,
 				'engine' => null,
 				'rows_est' => null,
 				'comment' => null,
@@ -814,6 +994,116 @@ function sqlmnger_table_structure($h, $database, $table, $opts = null) {
 		);
 	}
 
+	// Oracle：ALL_TAB_COLUMNS + PK + indexes
+	if (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$owner = strtoupper($schema);
+		$tab = strtoupper(strval($table));
+		$sql = 'SELECT COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, COLUMN_ID, DATA_DEFAULT
+			FROM ALL_TAB_COLUMNS
+			WHERE OWNER = ? AND TABLE_NAME = ?
+			ORDER BY COLUMN_ID';
+		$r = sqlmnger_query_all($h, $sql, array($owner, $tab));
+		$cols = array();
+		foreach ($r['rows'] as $row) {
+			$dtype = strtoupper(strval($row[1]));
+			$len = isset($row[2]) ? $row[2] : null;
+			$prec = isset($row[3]) ? $row[3] : null;
+			$scale = isset($row[4]) ? $row[4] : null;
+			$typeStr = $dtype;
+			if ($prec !== null && strval($prec) !== '' && (
+				strpos($dtype, 'NUMBER') !== false || strpos($dtype, 'FLOAT') !== false
+				|| strpos($dtype, 'DECIMAL') !== false || strpos($dtype, 'NUMERIC') !== false
+			)) {
+				if ($scale !== null && strval($scale) !== '' && intval($scale) !== 0) {
+					$typeStr = $dtype . '(' . intval($prec) . ',' . intval($scale) . ')';
+				} else {
+					$typeStr = $dtype . '(' . intval($prec) . ')';
+				}
+			} elseif ($len !== null && strval($len) !== '' && (
+				strpos($dtype, 'CHAR') !== false || strpos($dtype, 'RAW') !== false
+			)) {
+				$typeStr = $dtype . '(' . intval($len) . ')';
+			}
+			$nullRaw = isset($row[5]) ? strtoupper(strval($row[5])) : 'Y';
+			$cols[] = array(
+				'name' => $row[0],
+				'type' => $typeStr,
+				'nullable' => ($nullRaw === 'Y' || $nullRaw === 'YES'),
+				'key' => '',
+				'default' => isset($row[7]) ? $row[7] : null,
+				'extra' => '',
+				'comment' => '',
+				'is_primary' => false,
+				'pos' => isset($row[6]) ? intval($row[6]) : 0,
+			);
+		}
+		$sqlPk = "SELECT cc.COLUMN_NAME
+			FROM ALL_CONSTRAINTS c
+			INNER JOIN ALL_CONS_COLUMNS cc
+				ON c.OWNER = cc.OWNER AND c.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+			WHERE c.CONSTRAINT_TYPE = 'P' AND c.OWNER = ? AND c.TABLE_NAME = ?
+			ORDER BY cc.POSITION";
+		$rpk = sqlmnger_query_all($h, $sqlPk, array($owner, $tab));
+		$pk = array();
+		foreach ($rpk['rows'] as $row) {
+			if (isset($row[0])) {
+				$pk[] = $row[0];
+			}
+		}
+		foreach ($cols as $k => $col) {
+			if (in_array($col['name'], $pk, true)) {
+				$cols[$k]['is_primary'] = true;
+				$cols[$k]['key'] = 'PRI';
+			}
+		}
+		$indexes = array();
+		if (!$light) {
+			$sqlIx = "SELECT i.INDEX_NAME, i.UNIQUENESS, ic.COLUMN_NAME, ic.COLUMN_POSITION
+				FROM ALL_INDEXES i
+				INNER JOIN ALL_IND_COLUMNS ic
+					ON i.OWNER = ic.INDEX_OWNER AND i.INDEX_NAME = ic.INDEX_NAME
+				WHERE i.TABLE_OWNER = ? AND i.TABLE_NAME = ?
+				ORDER BY i.INDEX_NAME, ic.COLUMN_POSITION";
+			$rix = sqlmnger_query_all($h, $sqlIx, array($owner, $tab));
+			$idxMap = array();
+			foreach ($rix['rows'] as $row) {
+				$kn = strval($row[0]);
+				if ($kn === '') {
+					continue;
+				}
+				if (!isset($idxMap[$kn])) {
+					$uniq = isset($row[1]) ? strtoupper(strval($row[1])) : '';
+					$idxMap[$kn] = array(
+						'name' => $kn,
+						'unique' => ($uniq === 'UNIQUE'),
+						'primary' => in_array($kn, $pk, true), // 粗略；PK 索引名常不同
+						'type' => null,
+						'columns' => array(),
+					);
+				}
+				if (isset($row[2])) {
+					$idxMap[$kn]['columns'][] = $row[2];
+				}
+			}
+			// 按 PK 列集合标记 primary
+			foreach ($idxMap as $kn => $ix) {
+				if (count($pk) > 0 && $ix['columns'] === $pk) {
+					$idxMap[$kn]['primary'] = true;
+				}
+			}
+			$indexes = array_values($idxMap);
+		}
+		return array(
+			'columns' => $cols,
+			'indexes' => $indexes,
+			'primary_key' => $pk,
+			'table' => $table,
+			'database' => $schema,
+			'create_sql' => $light ? null : sqlmnger_table_create_sql($h, $schema, $table),
+		);
+	}
+
 	// sqlsrv
 	$sql = "SELECT c.name, ty.name AS type_name, c.max_length, c.precision, c.scale, c.is_nullable, c.column_id
 		FROM sys.columns c
@@ -937,6 +1227,23 @@ function sqlmnger_table_create_sql($h, $database, $table) {
 				return strval($r['rows'][0][0]);
 			}
 			return null;
+		}
+		// Oracle：尝试 DBMS_METADATA，失败返回简略注释或空串
+		if (sqlmnger_is_oracle_family($driver)) {
+			$schema = sqlmnger_oracle_resolve_schema($h, $database);
+			$owner = strtoupper($schema);
+			$tab = strtoupper(strval($table));
+			if ($h['type'] === 'tds') {
+				$sql = "SELECT DBMS_METADATA.GET_DDL('TABLE', "
+					. sqlmnger_oracle_quote_value($tab) . ', '
+					. sqlmnger_oracle_quote_value($owner) . ') FROM DUAL';
+				$r = sqlmnger_tds_query_all_soft($h['handle'], $sql);
+				if ($r !== false && !empty($r['rows'][0][0])) {
+					return strval($r['rows'][0][0]);
+				}
+			}
+			return "-- Oracle 表 DDL（DBMS_METADATA 不可用或失败）\n"
+				. '-- 对象: "' . str_replace('"', '""', $owner) . '"."' . str_replace('"', '""', $tab) . "\"\n";
 		}
 		// sqlsrv / mssql_tcp：表通常无 MODULE definition；视图才有
 		if (sqlmnger_is_mssql_family($driver)) {
@@ -1136,6 +1443,9 @@ function sqlmnger_table_data_payload($h, $database, $table, $limit, $where, $off
 	$qTable = sqlmnger_ident_quote($driver, $table);
 	if (sqlmnger_is_mssql_family($driver)) {
 		$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$qTable = sqlmnger_oracle_qtable($driver, $schema, $table);
 	}
 
 	// 允许排序的列名（结构列；视图在 sqlsrv 结构查询可能为空，再补一轮对象列）
@@ -1249,6 +1559,54 @@ function sqlmnger_table_data_payload($h, $database, $table, $limit, $where, $off
 			$sql = 'SELECT * FROM ' . $qTable . $whereSql . $orderSql
 				. ' LIMIT ' . $limit . ' OFFSET ' . $offset;
 		}
+		$r = sqlmnger_query_all($h, $sql, array());
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		// Oracle 12c+：OFFSET/FETCH；失败回退 ROWNUM 双层
+		$ord = ($orderSql !== '') ? $orderSql : ' ORDER BY 1';
+		$pageLimit = $unlimited ? $softMax : $limit;
+		$pageOffset = $unlimited ? 0 : $offset;
+		if ($unlimited) {
+			$sql = 'SELECT * FROM ' . $qTable . $whereSql . $ord
+				. ' FETCH FIRST ' . intval($pageLimit) . ' ROWS ONLY';
+		} else {
+			$sql = 'SELECT * FROM ' . $qTable . $whereSql . $ord
+				. ' OFFSET ' . intval($pageOffset) . ' ROWS FETCH NEXT ' . intval($pageLimit) . ' ROWS ONLY';
+		}
+		$r = false;
+		if ($h['type'] === 'tds') {
+			$qfn = sqlmnger_tds_quote_fn_for_driver($driver);
+			$sqlRun = sqlmnger_tds_inline_params($sql, array(), $qfn);
+			$r = sqlmnger_tds_query_all_soft($h['handle'], $sqlRun);
+		}
+		if ($r === false) {
+			$sql = sqlmnger_oracle_rownum_paged_sql(
+				$qTable,
+				$whereSql,
+				$ord,
+				$pageLimit,
+				$pageOffset,
+				$unlimited
+			);
+			$r = sqlmnger_query_all($h, $sql, array());
+		}
+		// 去掉 ROWNUM 辅助列
+		if (!empty($r['columns'])) {
+			$rnIdx = null;
+			foreach ($r['columns'] as $ci => $cn) {
+				if (strval($cn) === '__sqlmnger_rn' || strtoupper(strval($cn)) === '__SQLMNGER_RN') {
+					$rnIdx = $ci;
+					break;
+				}
+			}
+			if ($rnIdx !== null) {
+				array_splice($r['columns'], $rnIdx, 1);
+				foreach ($r['rows'] as $ri => $row) {
+					if (is_array($row) && array_key_exists($rnIdx, $row)) {
+						array_splice($r['rows'][$ri], $rnIdx, 1);
+					}
+				}
+			}
+		}
 	} else {
 		// SQL Server：不用 OFFSET/FETCH（旧版/兼容级别易报错），改用 ROW_NUMBER（2005+）
 		$sql = sqlmnger_sqlsrv_paged_sql(
@@ -1259,9 +1617,9 @@ function sqlmnger_table_data_payload($h, $database, $table, $limit, $where, $off
 			$unlimited,
 			$orderOver
 		);
+		$r = sqlmnger_query_all($h, $sql, array());
 	}
 
-	$r = sqlmnger_query_all($h, $sql, array());
 	// 去掉 SQL Server 分页辅助列
 	if (sqlmnger_is_mssql_family($driver) && !empty($r['columns']) && $r['columns'][0] === '__sqlmnger_rn') {
 		array_shift($r['columns']);
@@ -1376,6 +1734,28 @@ function sqlmnger_sqlsrv_paged_sql($qTable, $whereSql, $limit, $offset, $unlimit
 }
 
 /**
+ * Oracle ROWNUM 双层分页（OFFSET/FETCH 不可用时）
+ * $orderSql 须含前导 " ORDER BY ..."
+ */
+function sqlmnger_oracle_rownum_paged_sql($qTable, $whereSql, $orderSql, $limit, $offset, $unlimited) {
+	$limit = intval($limit);
+	$offset = intval($offset);
+	if ($limit <= 0) {
+		$limit = 2000000;
+	}
+	if ($offset < 0) {
+		$offset = 0;
+	}
+	if ($orderSql === null || trim(strval($orderSql)) === '') {
+		$orderSql = ' ORDER BY 1';
+	}
+	$end = ($unlimited || $offset === 0) ? $limit : ($offset + $limit);
+	$inner = 'SELECT * FROM ' . $qTable . $whereSql . $orderSql;
+	$mid = 'SELECT a.*, ROWNUM AS "__sqlmnger_rn" FROM (' . $inner . ') a WHERE ROWNUM <= ' . intval($end);
+	return 'SELECT * FROM (' . $mid . ') WHERE "__sqlmnger_rn" > ' . intval($offset);
+}
+
+/**
  * 将用户输入的 WHERE 片段规范为 " WHERE (...)" 或空串。
  * 禁止分号多语句、注释、UNION 等常见注入拼装。
  */
@@ -1423,6 +1803,9 @@ function sqlmnger_update_row($h, $database, $table, $keys, $set) {
 	$qTable = sqlmnger_ident_quote($driver, $table);
 	if (sqlmnger_is_mssql_family($driver)) {
 		$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$qTable = sqlmnger_oracle_qtable($driver, $schema, $table);
 	}
 
 	$setParts = array();
@@ -1465,6 +1848,9 @@ function sqlmnger_drop_index($h, $database, $table, $indexName) {
 		$sql = 'DROP INDEX ' . $qIdx . ' ON ' . $qTable;
 	} elseif ($driver === 'sqlite') {
 		$sql = 'DROP INDEX ' . $qIdx;
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$sql = 'DROP INDEX ' . sqlmnger_oracle_qtable($driver, $schema, $indexName);
 	} else {
 		$sql = 'DROP INDEX ' . $qIdx . ' ON ' . sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
 	}
@@ -1493,6 +1879,11 @@ function sqlmnger_create_index($h, $database, $table, $indexName, $cols, $unique
 		$sql = 'CREATE ' . $u . 'INDEX ' . $qIdx . ' ON ' . $qTable . ' (' . implode(', ', $qCols) . ')';
 	} elseif ($driver === 'sqlite') {
 		$sql = 'CREATE ' . $u . 'INDEX ' . $qIdx . ' ON ' . $qTable . ' (' . implode(', ', $qCols) . ')';
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$qFull = sqlmnger_oracle_qtable($driver, $schema, $table);
+		$qIxFull = sqlmnger_oracle_qtable($driver, $schema, $indexName);
+		$sql = 'CREATE ' . $u . 'INDEX ' . $qIxFull . ' ON ' . $qFull . ' (' . implode(', ', $qCols) . ')';
 	} else {
 		$sql = 'CREATE ' . $u . 'INDEX ' . $qIdx . ' ON ' . sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable . ' (' . implode(', ', $qCols) . ')';
 	}
@@ -2309,6 +2700,9 @@ function sqlmnger_insert_row($h, $database, $table, $set) {
 	$qTable = sqlmnger_ident_quote($driver, $table);
 	if (sqlmnger_is_mssql_family($driver)) {
 		$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$qTable = sqlmnger_oracle_qtable($driver, $schema, $table);
 	}
 	$cols = array();
 	$ph = array();
@@ -2343,6 +2737,9 @@ function sqlmnger_delete_rows($h, $database, $table, $keysList) {
 	$qTable = sqlmnger_ident_quote($driver, $table);
 	if (sqlmnger_is_mssql_family($driver)) {
 		$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		$schema = sqlmnger_oracle_resolve_schema($h, $database);
+		$qTable = sqlmnger_oracle_qtable($driver, $schema, $table);
 	}
 	$affected = 0;
 	foreach ($keysList as $keys) {

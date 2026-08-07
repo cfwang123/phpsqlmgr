@@ -8,11 +8,11 @@
  */
 return array(
 	'app_name' => 'sqlmnger',
-	'app_version' => '1.0.3',
+	'app_version' => '1.0.4',
 	'app_key' => 'PLEASE-CHANGE-TO-A-LONG-RANDOM-SECRET-32+',
 	'debug' => false,
 
-	'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp', 'mssql_net'),
+	'enabled_drivers' => array('mysql', 'sqlite', 'sqlsrv', 'mssql_tcp', 'mssql_net', 'oracle_net'),
 
 	'session_name' => 'SQLMNGERSESSID',
 	'session_ttl' => 604800,

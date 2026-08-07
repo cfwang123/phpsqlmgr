@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- .NET Framework 4.8 控制台：供 PHP mssql_net 驱动调用 -->
+<!-- .NET Framework 4.8 控制台：供 PHP mssql_net / oracle_net 驱动调用 -->
 <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
@@ -35,9 +35,72 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Data" />
     <Reference Include="System.Web.Extensions" />
+    <Reference Include="Oracle.ManagedDataAccess">
+      <HintPath>lib\Oracle.ManagedDataAccess.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>lib\System.Buffers.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>lib\System.Memory.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>lib\System.Numerics.Vectors.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>lib\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions">
+      <HintPath>lib\System.Threading.Tasks.Extensions.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Diagnostics.DiagnosticSource">
+      <HintPath>lib\System.Diagnostics.DiagnosticSource.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Formats.Asn1">
+      <HintPath>lib\System.Formats.Asn1.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Text.Encodings.Web">
+      <HintPath>lib\System.Text.Encodings.Web.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Text.Json">
+      <HintPath>lib\System.Text.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <None Include="App.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- 发布到项目根 bin/：exe + config + Oracle 托管驱动及依赖 -->
+  <Target Name="CopyToProjectBin" AfterTargets="Build">
+    <PropertyGroup>
+      <_ProjBin>$(MSBuildProjectDirectory)\..\..\bin</_ProjBin>
+    </PropertyGroup>
+    <ItemGroup>
+      <_PublishFiles Include="$(OutputPath)$(AssemblyName).exe" />
+      <_PublishFiles Include="$(OutputPath)$(AssemblyName).exe.config" Condition="Exists('$(OutputPath)$(AssemblyName).exe.config')" />
+      <_PublishFiles Include="$(OutputPath)Oracle.ManagedDataAccess.dll" Condition="Exists('$(OutputPath)Oracle.ManagedDataAccess.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Buffers.dll" Condition="Exists('$(OutputPath)System.Buffers.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Memory.dll" Condition="Exists('$(OutputPath)System.Memory.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Numerics.Vectors.dll" Condition="Exists('$(OutputPath)System.Numerics.Vectors.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Runtime.CompilerServices.Unsafe.dll" Condition="Exists('$(OutputPath)System.Runtime.CompilerServices.Unsafe.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Threading.Tasks.Extensions.dll" Condition="Exists('$(OutputPath)System.Threading.Tasks.Extensions.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Diagnostics.DiagnosticSource.dll" Condition="Exists('$(OutputPath)System.Diagnostics.DiagnosticSource.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Formats.Asn1.dll" Condition="Exists('$(OutputPath)System.Formats.Asn1.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Text.Encodings.Web.dll" Condition="Exists('$(OutputPath)System.Text.Encodings.Web.dll')" />
+      <_PublishFiles Include="$(OutputPath)System.Text.Json.dll" Condition="Exists('$(OutputPath)System.Text.Json.dll')" />
+    </ItemGroup>
+    <MakeDir Directories="$(_ProjBin)" Condition="!Exists('$(_ProjBin)')" />
+    <Copy SourceFiles="@(_PublishFiles)" DestinationFolder="$(_ProjBin)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

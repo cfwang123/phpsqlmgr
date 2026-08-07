@@ -380,6 +380,7 @@ window.SqlmngerLogin = (function () {
 		if (drv === 'sqlsrv') return 'SQL Server';
 		if (drv === 'mssql_tcp') return 'MSSQL TCP';
 		if (drv === 'mssql_net') return 'MSSQL .NET';
+		if (drv === 'oracle_net') return 'Oracle .NET';
 		return drv || '?';
 	}
 
@@ -443,7 +444,7 @@ window.SqlmngerLogin = (function () {
 			'  <div class="sqlmnger-login-hd">' +
 			'    <div class="sqlmnger-login-logo"><i class="fa-solid fa-database"></i></div>' +
 			'    <div>' +
-			'      <div class="sqlmnger-login-title">sqlmnger <span class="sqlmnger-login-ver">v1.0.3</span></div>' +
+			'      <div class="sqlmnger-login-title">sqlmnger <span class="sqlmnger-login-ver">v1.0.4</span></div>' +
 			'      <div class="sqlmnger-login-sub">' + esc(_('login.sub')) + '</div>' +
 			'    </div>' +
 			'  </div>' +
@@ -553,6 +554,7 @@ window.SqlmngerLogin = (function () {
 			_state.driver = _els.driver.value;
 			if (_state.driver === 'mysql') _els.port.value = 3306;
 			if (_state.driver === 'sqlsrv' || _state.driver === 'mssql_tcp' || _state.driver === 'mssql_net') _els.port.value = 1433;
+			if (_state.driver === 'oracle_net') _els.port.value = 1521;
 			applyDriverUi();
 		};
 
@@ -713,7 +715,7 @@ window.SqlmngerLogin = (function () {
 			readonly: !!( _els.readonly && _els.readonly.checked ),
 			force_ssl: forceSsl
 		};
-		// SQL Server TDS / .NET CLI：强制 SSL → require；未勾选用 auto
+		// SQL Server TDS / .NET CLI：强制 SSL → require；未勾选用 auto（Oracle 无 encrypt）
 		if (driver === 'mssql_tcp' || driver === 'mssql_net') {
 			body.encrypt = forceSsl ? 'require' : 'auto';
 		}
@@ -775,7 +777,8 @@ window.SqlmngerLogin = (function () {
 			{ id: 'sqlite', label: 'SQLite', available: true },
 			{ id: 'sqlsrv', label: 'SQL Server (sqlsrv)', available: true },
 			{ id: 'mssql_tcp', label: 'SQL Server (TCP/TDS)', available: true },
-			{ id: 'mssql_net', label: 'SQL Server (.NET CLI)', available: true }
+			{ id: 'mssql_net', label: 'SQL Server (.NET CLI)', available: true },
+			{ id: 'oracle_net', label: 'Oracle (.NET CLI)', available: true }
 		];
 		var i, d, opt, first = null;
 		for (i = 0; i < list.length; i++) {
@@ -795,6 +798,7 @@ window.SqlmngerLogin = (function () {
 			_state.driver = first;
 			if (first === 'mysql') _els.port.value = 3306;
 			if (first === 'sqlsrv' || first === 'mssql_tcp' || first === 'mssql_net') _els.port.value = 1433;
+			if (first === 'oracle_net') _els.port.value = 1521;
 		} else if (sel.value) {
 			_state.driver = sel.value;
 		}
@@ -803,6 +807,7 @@ window.SqlmngerLogin = (function () {
 	function applyDriverUi() {
 		var drv = _els.driver ? _els.driver.value : '';
 		var isSqlite = (drv === 'sqlite');
+		var isOracle = (drv === 'oracle_net' || drv === 'oracle');
 		var isMssqlEnc = (drv === 'mssql_tcp' || drv === 'mssql_net');
 		if (_els.net) _els.net.style.display = isSqlite ? 'none' : 'flex';
 		if (_els.fieldDb) _els.fieldDb.style.display = isSqlite ? 'none' : 'block';
@@ -812,9 +817,14 @@ window.SqlmngerLogin = (function () {
 		// SQLite 无密码，隐藏记住密码
 		var sp = _root && _root.querySelector('.sqlmnger-check-savepass');
 		if (sp) sp.style.display = isSqlite ? 'none' : 'flex';
-		// 强制 SSL：TDS 纯 PHP / .NET CLI
+		// 强制 SSL：仅 TDS 纯 PHP / MSSQL .NET CLI；Oracle 隐藏
 		if (_els.fieldForceSsl) {
 			_els.fieldForceSsl.style.display = isMssqlEnc ? 'flex' : 'none';
+		}
+		if (_els.database) {
+			_els.database.placeholder = isOracle
+				? 'Service Name（如 ORCL）'
+				: _('login.dbPlaceholder');
 		}
 		updatePassHint();
 	}

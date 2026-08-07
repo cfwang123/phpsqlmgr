@@ -7,6 +7,23 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ---
 
+## [1.0.4] — 2026-08-07
+
+### Added
+
+- **Driver `oracle_net`**: Oracle via the same **SqlmngerMsCli** resident daemon (`engine=oracle` + `Oracle.ManagedDataAccess.dll` next to the exe).
+  - Login uses **Service Name** (`host:port/service`, default port **1521**); post-login “databases” are **schemas**.
+  - Full stack: schema/table tree, structure, OFFSET/FETCH pagination (ROWNUM fallback), SQL console, grid CRUD.
+  - Login UI hides SQL Server “force SSL”; database field placeholder is Service Name.
+- Publish note: ship `bin/SqlmngerMsCli.exe`, `SqlmngerMsCli.exe.config`, `Oracle.ManagedDataAccess.dll`, and its .NET Framework dependency DLLs (System.Memory / Buffers / Text.Json / …) beside the exe.
+
+### Changed
+
+- Default `enabled_drivers` includes `oracle_net`.
+- CLI connection pool holds `IDbConnection` (SQL Server or Oracle per request `engine`).
+
+---
+
 ## [1.0.3] — 2026-08-01
 
 ### Added
@@ -110,6 +127,7 @@ Versioning follows semantic intent for this prototype (not yet a strict public S
 
 ---
 
+[1.0.4]: #104---2026-08-07
 [1.0.3]: #103---2026-08-01
 [1.0.1]: #101---2026-07-25
 [1.0.0]: #100---2026-07

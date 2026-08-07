@@ -2,7 +2,7 @@
 
 Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Adminer.
 
-**Version**: v1.0.3 · **Status**: runnable prototype / near-MVP
+**Version**: v1.0.4 · **Status**: runnable prototype / near-MVP
 
 > Chinese: [README.zh.md](README.zh.md) · Changes: [CHANGELOG.md](CHANGELOG.md)
 
@@ -40,6 +40,7 @@ Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Admi
   - SQL Server (extension) — Microsoft PHP SQL Server extension
   - SQL Server (pure PHP) — connection implemented in pure PHP (no Microsoft extension; optional encryption)
   - SQL Server (.NET CLI) — Windows helper `bin/SqlmngerMsCli.exe` (.NET 4.8 SqlClient, Schannel TLS 1.2); resident singleton TCP daemon: PHP spawns it on demand, clients share one process, auto-exits after 60 s with no connection (`mssql_net_idle_sec`)
+  - Oracle (.NET CLI) — same `SqlmngerMsCli` process (`engine=oracle` + `Oracle.ManagedDataAccess.dll` and dependency DLLs beside the exe); login uses **Service Name** (`host:port/service`, default port 1521); full browse/SQL/grid CRUD via driver `oracle_net`
 - **Multi-tab connections**: connection id in URL `?c=…`
 - **Database / table browse**: filterable DB combo + left tree (context menu: data / structure / alter)
 - **Hash routing**: restore active table, WHERE, sort, LIMIT, page, and **mode** (`m=struct` / `m=alter`)
@@ -136,7 +137,7 @@ cp config/config.example.php config/config.php
 | `allow_empty_password` | Allow empty DB password (local dev) |
 | `session_ttl` | Cookie lifetime (default 7 days) |
 | `enabled_drivers` | MySQL / SQLite / SQL Server (extension) / SQL Server (pure PHP) / SQL Server (.NET CLI) |
-| `mssql_net_idle_sec` | .NET CLI daemon idle-exit seconds with no client (default 60) |
+| `mssql_net_idle_sec` | .NET CLI daemon idle-exit seconds with no client (default 60; applies to both `mssql_net` and `oracle_net`) |
 | `sqlite_root` | SQLite path jail |
 | `default_table_limit` / `default_sql_limit` | Default row limits (`0` = unlimited / no auto LIMIT) |
 | `max_fetch_rows` / `unlimited_soft_max` | Caps |

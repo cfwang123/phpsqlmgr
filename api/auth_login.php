@@ -71,9 +71,17 @@ if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') 
 		$conn['port'] = 1433;
 	}
 }
+if ($driver === 'oracle_net') {
+	if ($conn['host'] === '') {
+		$conn['host'] = '127.0.0.1';
+	}
+	if ($conn['port'] <= 0) {
+		$conn['port'] = 1521;
+	}
+}
 
 // 空密码策略（仅网络库账号；SQLite 无密码）
-if (($driver === 'mysql' || $driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') && $conn['password'] === '') {
+if (($driver === 'mysql' || $driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net' || $driver === 'oracle_net') && $conn['password'] === '') {
 	if (!sqlmnger_cfg('allow_empty_password', true)) {
 		sqlmnger_login_rate_fail();
 		sqlmnger_json_err(

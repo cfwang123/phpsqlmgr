@@ -6,7 +6,7 @@
  * - 中心 Tabs：打开表（数据编辑 + 结构/索引）
  */
 window.SqlmngerApp = (function () {
-	var APP_VERSION = '1.0.3';
+	var APP_VERSION = '1.0.4';
 
 	var t = {
 		start: start,
@@ -328,6 +328,7 @@ window.SqlmngerApp = (function () {
 		if (d === 'sqlsrv' || d === 'mssql') return 'SQL Server (sqlsrv)';
 		if (d === 'mssql_tcp') return 'SQL Server (TCP/TDS)';
 		if (d === 'mssql_net') return 'SQL Server (.NET CLI)';
+		if (d === 'oracle_net' || d === 'oracle') return 'Oracle (.NET CLI)';
 		if (d === 'sqlite') return 'SQLite';
 		return driver || _('common.unknown');
 	}
@@ -1272,15 +1273,23 @@ window.SqlmngerApp = (function () {
 		name = String(name || '');
 		var d = driverOfConn();
 		if (d === 'mysql') return '`' + name.replace(/`/g, '``') + '`';
-		if (d === 'sqlsrv' || d === 'mssql_tcp' || d === 'mssql') {
+		if (d === 'sqlsrv' || d === 'mssql_tcp' || d === 'mssql_net' || d === 'mssql') {
 			return '[dbo].[' + name.replace(/]/g, ']]') + ']';
 		}
-		// sqlite
+		// sqlite / oracle：双引号标识符
 		return '"' + name.replace(/"/g, '""') + '"';
 	}
 
 	function buildSelectStarSql(table) {
-		return 'SELECT * FROM ' + quoteTableIdent(table) + '\nLIMIT 100;\n';
+		var d = driverOfConn();
+		var q = quoteTableIdent(table);
+		if (d === 'sqlsrv' || d === 'mssql_tcp' || d === 'mssql_net' || d === 'mssql') {
+			return 'SELECT TOP 100 * FROM ' + q + ';\n';
+		}
+		if (d === 'oracle_net' || d === 'oracle') {
+			return 'SELECT * FROM ' + q + '\nFETCH FIRST 100 ROWS ONLY;\n';
+		}
+		return 'SELECT * FROM ' + q + '\nLIMIT 100;\n';
 	}
 
 	function copyTextQuiet(text) {
@@ -1387,12 +1396,12 @@ window.SqlmngerApp = (function () {
 		if (d === 'mysql') {
 			return 'RENAME TABLE ' + o + ' TO ' + quoteTableIdent(newName) + ';';
 		}
-		if (d === 'sqlsrv' || d === 'mssql_tcp' || d === 'mssql') {
+		if (d === 'sqlsrv' || d === 'mssql_tcp' || d === 'mssql_net' || d === 'mssql') {
 			// sp_rename 新名不要 schema 前缀
 			return "EXEC sp_rename N'dbo." + String(oldName).replace(/'/g, "''")
 				+ "', N'" + String(newName).replace(/'/g, "''") + "';";
 		}
-		// sqlite
+		// sqlite / oracle
 		return 'ALTER TABLE ' + o + ' RENAME TO '
 			+ '"' + String(newName).replace(/"/g, '""') + '";';
 	}

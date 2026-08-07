@@ -308,6 +308,10 @@ function sqlmnger_sql_apply_row_limit($driver, $sql, $limit) {
 		}
 		return $sql;
 	}
+	if (sqlmnger_is_oracle_family($driver)) {
+		// Oracle 12c+：FETCH FIRST；勿套 TOP / LIMIT
+		return $sql . ' FETCH FIRST ' . $limit . ' ROWS ONLY';
+	}
 	return $sql . ' LIMIT ' . $limit;
 }
 

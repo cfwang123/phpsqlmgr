@@ -1,9 +1,9 @@
 <?php
 /**
- * SQL Server 驱动：.NET 4.8 SqlmngerMsCli.exe（常驻单例）
+ * SQL Server / Oracle 驱动：.NET 4.8 SqlmngerMsCli.exe（常驻单例）
  *
  * - 需要时启动 CLI；多 PHP 请求共用同一进程（Mutex + port 文件）
- * - TCP NDJSON；CLI 内连接池复用 SqlConnection
+ * - TCP NDJSON；engine=mssql|oracle；CLI 内连接池复用 IDbConnection
  * - PHP disconnect 只断 TCP，不杀进程；CLI 无连接满 60 秒自动退出（config mssql_net_idle_sec）
  *
  * 兼容 PHP 5.5+
@@ -25,12 +25,34 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 		private $lastError = null;
 		private $serverVersion = null;
 		private $exePath = null;
+		/** @var string mssql|oracle */
+		private $engine = 'mssql';
 
 		/** @var resource|null TCP 到常驻 CLI */
 		private $sock = null;
 
 		/** @var int 空闲退出秒数（传给 CLI） */
 		private static $idleSec = 60;
+
+		/**
+		 * @param string $engine mssql|oracle
+		 * @return SqlmngerMssqlNetClient
+		 */
+		public static function create($engine = 'mssql') {
+			$c = new self();
+			$e = strtolower(strval($engine));
+			if ($e === 'oracle' || $e === 'ora' || $e === 'oracle_net') {
+				$c->engine = 'oracle';
+				$c->port = 1521;
+			} else {
+				$c->engine = 'mssql';
+			}
+			return $c;
+		}
+
+		public function getEngine() {
+			return $this->engine;
+		}
 
 		public function isConnected() {
 			return $this->connected;
@@ -53,29 +75,40 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 			$this->lastError = null;
 			$this->serverVersion = null;
 			$this->tlsEnabled = false;
+			if (!is_array($opts)) {
+				$opts = array();
+			}
+			if (isset($opts['engine']) && strval($opts['engine']) !== '') {
+				$e = strtolower(strval($opts['engine']));
+				if ($e === 'oracle' || $e === 'ora' || $e === 'oracle_net') {
+					$this->engine = 'oracle';
+				} else {
+					$this->engine = 'mssql';
+				}
+			}
+			$defaultPort = ($this->engine === 'oracle') ? 1521 : 1433;
 			$this->host = strval($host);
-			$this->port = intval($port) > 0 ? intval($port) : 1433;
+			$this->port = intval($port) > 0 ? intval($port) : $defaultPort;
 			$this->user = $user === null ? '' : strval($user);
 			$this->password = $password === null ? '' : strval($password);
 			$this->database = $database === null ? '' : strval($database);
 			$this->timeoutSec = max(3, intval(ceil($timeoutMs / 1000.0)));
-			if (!is_array($opts)) {
-				$opts = array();
-			}
-			if (isset($opts['encrypt']) && strval($opts['encrypt']) !== '') {
-				$this->encrypt = strtolower(strval($opts['encrypt']));
-			} elseif (function_exists('sqlmnger_cfg')) {
-				$this->encrypt = strtolower(strval(sqlmnger_cfg('mssql_tcp_encrypt', 'auto')));
-			}
-			if ($this->encrypt !== 'require' && $this->encrypt !== 'disable' && $this->encrypt !== 'auto') {
-				$this->encrypt = 'auto';
-			}
-			if (array_key_exists('trustServerCertificate', $opts)) {
-				$this->trustServerCertificate = !!$opts['trustServerCertificate'];
-			} elseif (array_key_exists('trust_server_certificate', $opts)) {
-				$this->trustServerCertificate = !!$opts['trust_server_certificate'];
-			} elseif (function_exists('sqlmnger_cfg')) {
-				$this->trustServerCertificate = !!sqlmnger_cfg('mssql_tcp_trust_server_certificate', true);
+			if ($this->engine === 'mssql') {
+				if (isset($opts['encrypt']) && strval($opts['encrypt']) !== '') {
+					$this->encrypt = strtolower(strval($opts['encrypt']));
+				} elseif (function_exists('sqlmnger_cfg')) {
+					$this->encrypt = strtolower(strval(sqlmnger_cfg('mssql_tcp_encrypt', 'auto')));
+				}
+				if ($this->encrypt !== 'require' && $this->encrypt !== 'disable' && $this->encrypt !== 'auto') {
+					$this->encrypt = 'auto';
+				}
+				if (array_key_exists('trustServerCertificate', $opts)) {
+					$this->trustServerCertificate = !!$opts['trustServerCertificate'];
+				} elseif (array_key_exists('trust_server_certificate', $opts)) {
+					$this->trustServerCertificate = !!$opts['trust_server_certificate'];
+				} elseif (function_exists('sqlmnger_cfg')) {
+					$this->trustServerCertificate = !!sqlmnger_cfg('mssql_tcp_trust_server_certificate', true);
+				}
 			}
 			if (function_exists('sqlmnger_cfg')) {
 				$idle = intval(sqlmnger_cfg('mssql_net_idle_sec', 60));
@@ -84,21 +117,33 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 				}
 			}
 
+			if ($this->engine === 'oracle' && !self::hasOracleDll()) {
+				$this->lastError = '未找到 bin/Oracle.ManagedDataAccess.dll（与 SqlmngerMsCli.exe 同目录）';
+				return false;
+			}
+
 			if (!$this->ensureDaemonAndConnect()) {
 				return false;
 			}
 
-			$resp = $this->rpc(array(
+			$req = array(
 				'op' => 'connect',
+				'engine' => $this->engine,
 				'host' => $this->host,
 				'port' => $this->port,
 				'user' => $this->user,
 				'password' => $this->password,
 				'database' => $this->database,
-				'encrypt' => $this->encrypt,
-				'trustServerCertificate' => $this->trustServerCertificate,
 				'timeout' => $this->timeoutSec,
-			));
+			);
+			if ($this->engine === 'mssql') {
+				$req['encrypt'] = $this->encrypt;
+				$req['trustServerCertificate'] = $this->trustServerCertificate;
+			}
+			if (isset($opts['sid']) && strval($opts['sid']) !== '') {
+				$req['sid'] = strval($opts['sid']);
+			}
+			$resp = $this->rpc($req);
 			if ($resp === false) {
 				$this->closeSock();
 				return false;
@@ -137,19 +182,23 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 				return $result;
 			}
 			// 会话已 connect 时只传 sql；CLI 用 held 连接。附带连接信息仅作掉线重开兜底
-			$resp = $this->rpc(array(
+			$req = array(
 				'op' => 'query',
+				'engine' => $this->engine,
 				'host' => $this->host,
 				'port' => $this->port,
 				'user' => $this->user,
 				'password' => $this->password,
 				'database' => $this->database,
-				'encrypt' => $this->encrypt,
-				'trustServerCertificate' => $this->trustServerCertificate,
 				'timeout' => max($this->timeoutSec, 60),
 				'row_format' => 'array',
 				'sql' => strval($sql),
-			), max(30, $this->timeoutSec + 30));
+			);
+			if ($this->engine === 'mssql') {
+				$req['encrypt'] = $this->encrypt;
+				$req['trustServerCertificate'] = $this->trustServerCertificate;
+			}
+			$resp = $this->rpc($req, max(30, $this->timeoutSec + 30));
 			if ($resp === false) {
 				$result['error'] = $this->lastError !== null ? $this->lastError : 'CLI 调用失败';
 				return $result;
@@ -202,6 +251,20 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 				return false;
 			}
 			return self::findExe() !== null;
+		}
+
+		/** Oracle 驱动：exe + 同目录 Oracle.ManagedDataAccess.dll */
+		public static function isOracleAvailable() {
+			return self::isAvailable() && self::hasOracleDll();
+		}
+
+		public static function hasOracleDll() {
+			$exe = self::findExe();
+			if ($exe === null) {
+				return false;
+			}
+			$dir = dirname($exe);
+			return is_file($dir . DIRECTORY_SEPARATOR . 'Oracle.ManagedDataAccess.dll');
 		}
 
 		/** port 文件路径 */
@@ -361,7 +424,7 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 					return false;
 				}
 			} else {
-				$this->lastError = 'mssql_net 仅支持 Windows';
+				$this->lastError = 'mssql_net / oracle_net 仅支持 Windows';
 				return false;
 			}
 

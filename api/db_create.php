@@ -37,6 +37,8 @@ try {
 			$sql .= ' COLLATE ' . $collation;
 		}
 		sqlmnger_exec($h, $sql, array());
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		sqlmnger_json_err('UNSUPPORTED', 'Oracle 不支持在此创建数据库（请使用 Service Name / Schema）', 400, null);
 	} else {
 		sqlmnger_json_err('UNSUPPORTED', 'SQLite 不支持创建数据库（使用文件路径连接）', 400, null);
 	}

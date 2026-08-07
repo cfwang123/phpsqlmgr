@@ -1,22 +1,22 @@
 # sqlmnger — Apache
-# 修复静态 JS/CSS 中文乱码：强制 UTF-8 Content-Type
-# （源码本身为 UTF-8 无 BOM；未声明 charset 时浏览器可能按系统编码误读）
+# 1) 静态资源 UTF-8
+# 2) 非 Web 文件 / 敏感目录禁止访问（DocumentRoot 为项目根时）
 
-# 默认字符集
+# ── 默认字符集 ───────────────────────────────────────────
 AddDefaultCharset UTF-8
 
-# MIME + charset（多数 Apache 有效）
+# MIME + charset
 AddType "application/javascript; charset=UTF-8" .js
 AddType "text/css; charset=UTF-8" .css
 AddType "application/json; charset=UTF-8" .json
 AddType "image/svg+xml; charset=UTF-8" .svg
 AddType "text/html; charset=UTF-8" .html .htm
-AddType "text/plain; charset=UTF-8" .txt .md .map
+AddType "text/plain; charset=UTF-8" .txt .map
 
-# 后缀级 charset 兜底
-AddCharset UTF-8 .js .css .json .svg .html .htm .txt .md .map .xml
+# 后缀级 charset 兜底（不含 .md：文档禁止 Web 访问）
+AddCharset UTF-8 .js .css .json .svg .html .htm .txt .map .xml
 
-# 明确覆盖响应头（需 mod_headers；比仅 AddType 更稳）
+# 明确覆盖响应头（需 mod_headers）
 <IfModule mod_headers.c>
 	<FilesMatch "\.js$">
 		Header set Content-Type "application/javascript; charset=UTF-8"
@@ -43,27 +43,55 @@ AddCharset UTF-8 .js .css .json .svg .html .htm .txt .md .map .xml
 	php_value default_charset "UTF-8"
 </IfModule>
 
-# 可选：禁止列目录
+# 禁止列目录
 Options -Indexes
 
-# 可选：保护配置与日志（按需）
+# ── 按扩展名禁止：源码 / 构建 / 文档 / 密钥类 ─────────────
+# 允许对外：.php .js .css .html .htm .json .map .svg .ico .png .jpg .jpeg .gif .webp .woff .woff2 .ttf .eot .otf 等
 <IfModule mod_authz_core.c>
-	<FilesMatch "(^\.htaccess$|^\.env$|config\.php$)">
+	<FilesMatch "(?i)\.(md|markdown|cs|csproj|sln|config|dll|exe|pdb|lib|obj|bak|dist|log|sql|ini|env|yml|yaml|toml|lock|gitignore|gitattributes|editorconfig)$">
+		Require all denied
+	</FilesMatch>
+	# 隐藏文件（.htaccess / .env / .git* 等）
+	<FilesMatch "^\.">
+		Require all denied
+	</FilesMatch>
+	# 项目根敏感文件名（勿用 URL 打开）
+	<FilesMatch "(?i)^(config\.php|composer\.(json|lock)|package(-lock)?\.json)$">
+		Require all denied
+	</FilesMatch>
+	# API 内部 include（_*.php），禁止直接 URL 访问
+	<FilesMatch "^_.*\.php$">
 		Require all denied
 	</FilesMatch>
 </IfModule>
 # Apache 2.2
 <IfModule !mod_authz_core.c>
-	<FilesMatch "(^\.htaccess$|^\.env$|config\.php$)">
+	<FilesMatch "(?i)\.(md|markdown|cs|csproj|sln|config|dll|exe|pdb|lib|obj|bak|dist|log|sql|ini|env|yml|yaml|toml|lock|gitignore|gitattributes|editorconfig)$">
+		Order allow,deny
+		Deny from all
+	</FilesMatch>
+	<FilesMatch "^\.">
+		Order allow,deny
+		Deny from all
+	</FilesMatch>
+	<FilesMatch "(?i)^(config\.php|composer\.(json|lock)|package(-lock)?\.json)$">
+		Order allow,deny
+		Deny from all
+	</FilesMatch>
+	<FilesMatch "^_.*\.php$">
 		Order allow,deny
 		Deny from all
 	</FilesMatch>
 </IfModule>
 
-# storage 下日志/库文件不建议直接 Web 访问（若 DocumentRoot 含 storage）
+# ── 按目录禁止（即使扩展名看似“安全”）──────────────────
 <IfModule mod_rewrite.c>
 	RewriteEngine On
-	RewriteRule ^storage/ - [F,L]
-	RewriteRule ^tmp/ - [F,L]
-	RewriteRule ^config/ - [F,L]
+	# 敏感 / 非 Web 目录
+	RewriteRule ^(bin|tools|config|storage|tmp|vendor|\.git)/ - [F,L]
+	# API 内嵌库（仅 PHP include，不作为入口）
+	RewriteRule ^api/tds/ - [F,L]
+	# XUI 源码与参考（运行用 assets/xui/core.js、*.css）
+	RewriteRule ^assets/xui/(src|reference)/ - [F,L]
 </IfModule>

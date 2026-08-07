@@ -109,6 +109,14 @@ function sqlmnger_server_privileges($h) {
 			'driver' => $driver,
 		);
 	}
+	if (sqlmnger_is_oracle_family($driver)) {
+		return array(
+			'title' => '权限',
+			'columns' => array('说明'),
+			'rows' => array(array('Oracle 暂不支持服务器权限列表查询（可用 SQL 控制台查 DBA_USERS / SESSION_PRIVS）。')),
+			'driver' => $driver,
+		);
+	}
 	// SQL Server
 	$cols = array('主体', '类型', '权限', '状态');
 	$rows = array();
@@ -173,6 +181,15 @@ function sqlmnger_server_processes($h) {
 			'columns' => array('说明'),
 			'rows' => array(array('SQLite 嵌入式引擎无服务器进程列表。')),
 			'driver' => $driver,
+		);
+	}
+	if (sqlmnger_is_oracle_family($driver)) {
+		return array(
+			'title' => '进程列表',
+			'columns' => array('说明'),
+			'rows' => array(array('Oracle 暂不支持进程列表（可用 SQL 控制台查 V$SESSION）。')),
+			'driver' => $driver,
+			'killable' => false,
 		);
 	}
 	// SQL Server
@@ -268,6 +285,14 @@ function sqlmnger_server_variables($h) {
 			'driver' => $driver,
 		);
 	}
+	if (sqlmnger_is_oracle_family($driver)) {
+		return array(
+			'title' => '变量',
+			'columns' => array('说明'),
+			'rows' => array(array('Oracle 暂不支持变量列表（可用 SQL 控制台查 V$PARAMETER）。')),
+			'driver' => $driver,
+		);
+	}
 	// SQL Server configuration
 	$cols = array('name', 'value', 'value_in_use', 'description');
 	$rows = array();
@@ -330,6 +355,14 @@ function sqlmnger_server_status($h) {
 			'driver' => $driver,
 		);
 	}
+	if (sqlmnger_is_oracle_family($driver)) {
+		return array(
+			'title' => '状态',
+			'columns' => array('说明'),
+			'rows' => array(array('Oracle 暂不支持状态/性能计数器页（可用 SQL 控制台查 V$SYSSTAT）。')),
+			'driver' => $driver,
+		);
+	}
 	// SQL Server
 	$cols = array('counter_name', 'cntr_value', 'object_name');
 	$rows = array();
@@ -387,6 +420,9 @@ function sqlmnger_server_kill_process($h, $id) {
 	if ($driver === 'sqlsrv' || $driver === 'mssql_tcp' || $driver === 'mssql_net') {
 		sqlmnger_exec($h, 'KILL ' . intval($id), array());
 		return array('ok' => true, 'id' => intval($id));
+	}
+	if (sqlmnger_is_oracle_family($driver)) {
+		throw new Exception('Oracle 暂不支持 KILL（请用 ALTER SYSTEM KILL SESSION）');
 	}
 	throw new Exception('当前驱动不支持 KILL');
 }

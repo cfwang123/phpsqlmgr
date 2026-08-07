@@ -282,6 +282,9 @@ function sqlmnger_export_show_create($h, $driver, $database, $table) {
 		}
 		return '';
 	}
+	if (sqlmnger_is_oracle_family($driver)) {
+		return '-- Oracle: structure export limited; table "' . $table . "\"\n";
+	}
 	// sqlsrv：无标准 SHOW CREATE，输出注释说明
 	return '-- SQL Server: structure export limited; table [' . $table . "]\n";
 }
@@ -297,6 +300,8 @@ function sqlmnger_export_table_data_sql($h, $driver, $table, $dataMode) {
 	if ($soft < 1) $soft = 2000000;
 	if ($driver === 'mysql' || $driver === 'sqlite') {
 		$sql .= ' LIMIT ' . $soft;
+	} elseif (sqlmnger_is_oracle_family($driver)) {
+		$sql .= ' FETCH FIRST ' . $soft . ' ROWS ONLY';
 	}
 
 	$r = sqlmnger_query_all($h, $sql, array());
@@ -494,6 +499,8 @@ function sqlmnger_db_export_delimited($h, $db, $tablesSpec, $options, $delim, $e
 		$sql = 'SELECT * FROM ' . $qTable;
 		if ($driver === 'mysql' || $driver === 'sqlite') {
 			$sql .= ' LIMIT ' . max(1, $soft);
+		} elseif (sqlmnger_is_oracle_family($driver)) {
+			$sql .= ' FETCH FIRST ' . max(1, $soft) . ' ROWS ONLY';
 		}
 		$r = sqlmnger_query_all($h, $sql, array());
 		$fh = fopen('php://temp', 'r+');
