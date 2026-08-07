@@ -1,6 +1,6 @@
 # sqlmnger
 
-Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Adminer.
+Lightweight web database manager (MySQL / SQLite / SQL Server / Oracle), inspired by Adminer.
 
 **Version**: v1.0.4 · **Status**: runnable prototype / near-MVP
 
@@ -10,7 +10,7 @@ Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Admi
 
 ## 1. Features
 
-1. **Three engines, five drivers** — MySQL · SQLite · SQL Server via the usual Microsoft PHP extension, a **pure-PHP SQL Server connector**, **or** a **.NET helper CLI** on Windows (no PHP extension to install).
+1. **Multiple engines** — MySQL · SQLite · SQL Server (Microsoft PHP extension, **pure-PHP TDS**, or Windows **.NET CLI**) · Oracle (same **.NET CLI**, driver `oracle_net`).
 2. **Zero Composer runtime** — plain PHP **≥ 5.5.12**, drop-in deploy; document root = project root.
 3. **SPA + all AJAX JSON** — login, tree, grid, SQL, import/export never full-page postback; credentials stay in a **server Session vault** (not in every request body after login).
 4. **Large-table friendly** — load many rows once, **VirtualGrid** paints only the viewport; inline dirty cells, Ctrl+Enter submit, client column filters.
@@ -23,7 +23,8 @@ Lightweight web database manager (MySQL / SQLite / SQL Server), inspired by Admi
 ### Who it is for
 
 - Local / LAN **ops and debugging** when you want Adminer-class reach with a denser grid and multi-tab connections.
-- Hosts where **SQL Server PHP extensions are hard**, but the database server is still reachable (use the pure-PHP SQL Server connector).
+- Hosts where **SQL Server PHP extensions are hard**, but the database server is still reachable (use the pure-PHP SQL Server connector or the .NET CLI).
+- Windows hosts that need **Oracle** without a PHP OCI extension (`oracle_net` via the same CLI).
 - Teams that need a **small, self-contained** web DB tool next to a PHP app — not a full BI suite.
 
 > Capability checklist (screens, APIs, config keys): see **[Feature catalog](#2-feature-catalog)** below.
@@ -92,6 +93,7 @@ From the **database overview** page (export / import toolbar):
   - SQLite: `pdo_sqlite`
   - SQL Server (extension path): Microsoft SQL Server PHP extension
   - SQL Server (pure PHP connector): only built-in PHP networking; **openssl** recommended if you enable encryption
+  - SQL Server / Oracle (.NET CLI): Windows + **.NET Framework 4.8**, with `bin/SqlmngerMsCli.exe` deployed (Oracle also needs `Oracle.ManagedDataAccess.dll`, dependency DLLs, and `.exe.config` beside the exe)
 - `ZipArchive` for XLSX / multi-file ZIP export
 - `gzdecode` for gzip SQL import (optional)
 
@@ -108,21 +110,36 @@ Open the URL. After script updates use **Ctrl+F5**.
 ```text
 sqlmnger/
 ├── index.php              # entry
+├── .htaccess              # Apache: UTF-8 + deny non-web paths/extensions
 ├── api/                   # JSON APIs
-│   └── tds/               # pure-PHP SQL Server connector
+│   └── tds/               # pure-PHP TDS + .NET CLI client
 ├── assets/
-│   ├── css/               # app styles
-│   ├── js/                # app modules (sqlmnger.*.js)
+│   ├── css/ / js/         # app styles & modules
 │   ├── favicon.*
-│   └── xui/               # bundled UI assets (tabs, grid, windows, …)
-├── config/                # config.php (do not commit secrets)
-├── storage/
-│   ├── logs/              # audit log (gitignored contents)
-│   └── sqlite/            # SQLite jail
-└── tmp/                   # local temp (gitignored)
+│   └── xui/               # UI shell (runtime core.js; src not public)
+├── bin/                   # Windows .NET CLI runtime (exe / dll / config)
+├── config/                # copy config.example.php → config.php (no secrets in git)
+├── docs/
+├── scripts/               # local tools (e.g. pack script)
+├── storage/               # logs / sqlite (contents usually gitignored)
+├── tmp/                   # local temp (gitignored)
+└── release/               # local release archives (*.7z, not committed)
 ```
 
 > **v1.0.2+**: former `public/` tree is the project root; set the document root to the project root.
+
+## Release packaging
+
+Build a deployable archive at `release/phpsqlmgr_{version}.7z` (**local only; not uploaded to GitHub**). Requires [7-Zip](https://www.7-zip.org/) (`7z` on PATH or default install path).
+
+```bash
+node scripts/pack-release.js
+node scripts/pack-release.js --version 1.0.4
+```
+
+Archive root folder is `phpsqlmgr/`: `index.php`, `api/`, `assets/` (without xui sources), `bin/`, `config.example`, empty `storage` placeholders; excludes `tools/`, `tmp/`, and local `config.php`.
+
+.NET CLI sources live under `tools/SqlmngerMsCli/` (`lib/*.dll` **not in git**). Build with `slx SqlmngerMsCli rebuild` to sync into `bin/`. See [tools/SqlmngerMsCli/README.md](tools/SqlmngerMsCli/README.md).
 
 ## Configuration
 
@@ -136,7 +153,7 @@ cp config/config.example.php config/config.php
 | `debug` | Expose error detail on login fail |
 | `allow_empty_password` | Allow empty DB password (local dev) |
 | `session_ttl` | Cookie lifetime (default 7 days) |
-| `enabled_drivers` | MySQL / SQLite / SQL Server (extension) / SQL Server (pure PHP) / SQL Server (.NET CLI) |
+| `enabled_drivers` | Enabled driver ids (`mysql` / `sqlite` / `sqlsrv` / `mssql_tcp` / `mssql_net` / `oracle_net`) |
 | `mssql_net_idle_sec` | .NET CLI daemon idle-exit seconds with no client (default 60; applies to both `mssql_net` and `oracle_net`) |
 | `sqlite_root` | SQLite path jail |
 | `default_table_limit` / `default_sql_limit` | Default row limits (`0` = unlimited / no auto LIMIT) |
@@ -197,12 +214,15 @@ Table tab titles: table name only when all open tables share one database; `data
 - SQLite paths are jailed under `sqlite_root`
 - Saved login passwords in the browser are **obfuscated, not encrypted** — avoid on shared machines
 - Pure-PHP SQL Server connector: trusting the server certificate is convenient on LAN; use stricter certificate checks in production
+- Keep the root `.htaccess` on Apache: denies `bin/`, `tools/`, `config/`, `storage/`, `tmp/`, source extensions, and direct `_*.php` URLs
 - Keep audit logs and real `config.php` out of public VCS
+- `release/*.7z` and `tools/**/*.dll|exe` are gitignored; ship runtime `bin/` with your deploy as needed
 
 ## Development notes
 
 - App frontend is **IIFE** globals under `assets/js/` (`SqlmngerApp`, `SqlmngerTablePage`, `SqlmngerDbIO`, …) — no bundler required for normal work
 - Shared chrome (layout / grid / dialogs) lives under `assets/xui/`; usually leave it alone unless you are extending the shell
+- Release archive: `node scripts/pack-release.js` → `release/phpsqlmgr_*.7z`
 - Agent/workspace rules: root `AGENTS.md` (if present)
 - One-off scripts and backups go under `tmp/` (gitignored); see `.gitignore`
 

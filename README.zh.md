@@ -1,6 +1,6 @@
 # sqlmnger
 
-轻量 Web 数据库管理（MySQL / SQLite / SQL Server），交互参考 Adminer。
+轻量 Web 数据库管理（MySQL / SQLite / SQL Server / Oracle），交互参考 Adminer。
 
 **版本**：v1.0.4 · **状态**：可运行原型 / 接近 MVP 主体
 
@@ -10,7 +10,7 @@
 
 ## 1. 核心特性
 
-1. **三引擎、五驱动** — MySQL · SQLite · SQL Server（微软 PHP 扩展、**纯 PHP 实现的 SQL Server 连接**，**或** Windows 上的 **.NET 辅助 CLI**，免装 PHP 扩展）。
+1. **多引擎** — MySQL · SQLite · SQL Server（微软扩展 / **纯 PHP TDS** / Windows **.NET CLI**）· Oracle（同一 **.NET CLI**，`oracle_net`）。
 2. **运行时零 Composer** — 兼容 PHP **≥ 5.5.12**，拷贝即用；Web 根 = 项目根。
 3. **全站 SPA + AJAX JSON** — 登录 / 树 / 表格 / SQL / 导入导出均无整页回帖；登录后凭证在服务端 **Session Vault**，不反复明文回传。
 4. **大表可用** — 一次拉取多行，**VirtualGrid** 只渲染可视区；脏格编辑、Ctrl+Enter 提交、客户端列筛选。
@@ -84,6 +84,7 @@
   - SQLite：`pdo_sqlite`
   - SQL Server（扩展路径）：微软 SQL Server PHP 扩展
   - SQL Server（纯 PHP 连接）：仅需 PHP 自带网络能力；若开启加密建议有 **openssl**
+  - SQL Server / Oracle（.NET CLI）：Windows + **.NET Framework 4.8**，并部署 `bin/SqlmngerMsCli.exe`（Oracle 另需同目录 `Oracle.ManagedDataAccess.dll` 及依赖 DLL、`.exe.config`）
 - 导出 XLSX / 多文件 ZIP 需要 `ZipArchive`
 - 导入 `.sql.gz` 需要 `gzdecode`（可选）
 
@@ -100,22 +101,36 @@ php -S 127.0.0.1:8080 -t .
 ```text
 sqlmnger/
 ├── index.php              # 入口
+├── .htaccess              # Apache：UTF-8 + 禁止非 Web 路径/扩展名
 ├── api/                   # JSON API
-│   └── tds/               # 纯 PHP 实现的 SQL Server 连接
+│   └── tds/               # 纯 PHP TDS + .NET CLI 客户端
 ├── assets/
-│   ├── css/               # 业务样式
-│   ├── js/                # 业务模块（sqlmnger.*.js）
+│   ├── css/ / js/         # 业务样式与模块
 │   ├── favicon.*
-│   └── xui/               # 界面资源（布局 / 表格 / 弹窗等，一般无需改）
-├── config/                # config.php（勿提交密钥）
+│   └── xui/               # 界面壳（运行用 core.js；src 不对外）
+├── bin/                   # Windows .NET CLI 运行时（exe / dll / config）
+├── config/                # config.example.php → 复制为 config.php（勿提交密钥）
 ├── docs/
-├── storage/
-│   ├── logs/              # 审计日志（内容默认忽略）
-│   └── sqlite/            # SQLite jail
-└── tmp/                   # 本地临时（默认忽略）
+├── scripts/               # 本地工具（如打包脚本）
+├── storage/               # logs / sqlite 等（内容默认忽略）
+├── tmp/                   # 本地临时（默认忽略）
+└── release/               # 本地发布包（*.7z，默认不提交）
 ```
 
 > **v1.0.2+**：原 `public/` 下内容已提升到项目根，部署时文档根改为项目根即可。
+
+## 发布打包
+
+将可部署的 Web 文件打成 `release/phpsqlmgr_{版本}.7z`（**仅本地产物，不上传 GitHub**）。需本机 [7-Zip](https://www.7-zip.org/)（`7z` 在 PATH，或安装到默认目录）。
+
+```bash
+node scripts/pack-release.js
+node scripts/pack-release.js --version 1.0.4
+```
+
+包内顶层目录为 `phpsqlmgr/`：含 `index.php`、`api/`、`assets/`（不含 xui 源码）、`bin/`、`config.example`、空 `storage` 占位等；不含 `tools/`、`tmp/`、本地 `config.php`。
+
+`.NET CLI` 源码在 `tools/SqlmngerMsCli/`（`lib/` 下 dll **不进 Git**）；编译：`slx SqlmngerMsCli rebuild`，产物同步到 `bin/`。详见 [tools/SqlmngerMsCli/README.md](tools/SqlmngerMsCli/README.md)。
 
 ## 配置
 
@@ -129,7 +144,7 @@ cp config/config.example.php config/config.php
 | `debug` | 登录失败是否返回 detail |
 | `allow_empty_password` | 是否允许空密码登录（本地开发常用） |
 | `session_ttl` | Cookie 秒数（默认 7 天） |
-| `enabled_drivers` | MySQL / SQLite / SQL Server（扩展）/ SQL Server（纯 PHP）/ SQL Server（.NET CLI） |
+| `enabled_drivers` | 启用驱动列表（含 `mysql` / `sqlite` / `sqlsrv` / `mssql_tcp` / `mssql_net` / `oracle_net`） |
 | `mssql_net_idle_sec` | .NET CLI 无客户端连接后自动退出秒数（默认 60；`mssql_net` 与 `oracle_net` 共用） |
 | `sqlite_root` | SQLite 路径 jail |
 | `default_table_limit` / `default_sql_limit` | 默认行数（`0` = 不限 / 不自动 LIMIT） |
@@ -191,12 +206,15 @@ cp config/config.example.php config/config.php
 - SQLite 文件仅允许在 `sqlite_root` 内
 - 浏览器保存的登录密码仅为**混淆**，共享电脑勿勾选记住密码
 - 纯 PHP 的 SQL Server 连接：内网可信任服务器证书；生产环境请收紧证书校验
+- Apache 请保留根目录 `.htaccess`：禁止 `bin/`、`tools/`、`config/`、`storage/`、`tmp/`、源码扩展名与 `_*.php` 直链等
 - 审计日志与真实 `config.php` 不要提交到公开仓库
+- `release/*.7z`、`tools/**/*.dll|exe` 默认不进仓库；运行时 `bin/` 按部署需要自行分发
 
 ## 开发说明
 
 - 业务前端在 `assets/js/`，**IIFE** 全局模块（`SqlmngerApp`、`SqlmngerTablePage`、`SqlmngerDbIO` 等），日常改功能不必上打包工具
 - 布局 / 网格 / 对话框等壳层资源在 `assets/xui/`，一般不用动
+- 发布包：`node scripts/pack-release.js` → `release/phpsqlmgr_*.7z`
 - 一次性脚本与备份放 `tmp/`（默认被 git 忽略）；协作约定见根目录 `AGENTS.md`（若有）
 
 ## 许可
