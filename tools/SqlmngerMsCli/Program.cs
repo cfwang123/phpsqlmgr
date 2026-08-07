@@ -101,32 +101,53 @@ namespace SqlmngerMsCli
 				WriteStdoutReady(port);
 				TouchActivity();
 
+				// 异步 Accept：避免 Thread.Sleep 受 Windows 15.6ms 时钟粒度影响导致建连变慢
+				IAsyncResult acceptAr = null;
 				try
 				{
+					acceptAr = listener.BeginAcceptTcpClient(null, null);
 					while (!shuttingDown)
 					{
-						if (listener.Pending())
+						// 最多等 200ms 做一次空闲检查；有连接时 WaitOne 立即返回
+						bool signaled = acceptAr.AsyncWaitHandle.WaitOne(200);
+						if (signaled)
 						{
-							TcpClient client = listener.AcceptTcpClient();
-							client.NoDelay = true;
-							Interlocked.Increment(ref activeClients);
-							TouchActivity();
-							ThreadPool.QueueUserWorkItem(state =>
+							TcpClient client = null;
+							try
 							{
-								var c = (TcpClient)state;
-								try { HandleClient(c); }
-								catch { }
-								finally
+								client = listener.EndAcceptTcpClient(acceptAr);
+							}
+							catch
+							{
+								if (shuttingDown) break;
+							}
+							// 立刻挂起下一次 Accept，减少漏接
+							try { acceptAr = listener.BeginAcceptTcpClient(null, null); }
+							catch { if (shuttingDown) break; }
+
+							if (client != null)
+							{
+								client.NoDelay = true;
+								try { client.Client.NoDelay = true; } catch { }
+								Interlocked.Increment(ref activeClients);
+								TouchActivity();
+								ThreadPool.QueueUserWorkItem(state =>
 								{
-									try { c.Close(); } catch { }
-									Interlocked.Decrement(ref activeClients);
-									TouchActivity();
-								}
-							}, client);
+									var c = (TcpClient)state;
+									try { HandleClient(c); }
+									catch { }
+									finally
+									{
+										try { c.Close(); } catch { }
+										Interlocked.Decrement(ref activeClients);
+										TouchActivity();
+									}
+								}, client);
+							}
 							continue;
 						}
 
-						// 无挂起连接：检查空闲
+						// 超时：空闲退出 + 扫池
 						if (Volatile.Read(ref activeClients) == 0)
 						{
 							double idle = (DateTime.UtcNow - lastActivityUtc).TotalSeconds;
@@ -136,15 +157,22 @@ namespace SqlmngerMsCli
 								break;
 							}
 						}
-
-						// 顺带清理久未使用的 SQL 连接（> idle*2）
 						SweepPool();
-						Thread.Sleep(50);
 					}
 				}
 				finally
 				{
 					try { listener.Stop(); } catch { }
+					// 解除可能挂起的 BeginAccept
+					try
+					{
+						if (acceptAr != null && !acceptAr.IsCompleted)
+						{
+							// Stop 后 End 会抛，忽略
+							try { listener.EndAcceptTcpClient(acceptAr); } catch { }
+						}
+					}
+					catch { }
 					ClearPool();
 					TryDeletePortFile();
 				}
@@ -264,7 +292,7 @@ namespace SqlmngerMsCli
 			int timeout = GetInt(req, "timeout", 15);
 			if (timeout < 1) timeout = 15;
 
-			// 先从池取
+			// 先从池取（进程内复用，避免每次 PHP 请求都 SqlConnection.Open）
 			lock (Gate)
 			{
 				PoolEntry pe;
@@ -278,7 +306,7 @@ namespace SqlmngerMsCli
 						Pool.Remove(cs);
 						pe.LastUseUtc = DateTime.UtcNow;
 						var ok = OkEmpty(tls);
-						// 轻量版本探测可跳过以加速；需要时再查
+						// 池命中不查版本（PHP 侧会缓存首次 connect 的 server_version）
 						ok["server_version"] = "";
 						ok["tls"] = tls;
 						ok["pooled"] = true;
@@ -293,12 +321,17 @@ namespace SqlmngerMsCli
 			{
 				var c = new SqlConnection(cs);
 				c.Open();
+				// 仅冷连接查一次版本；need_version=false 时可跳过额外往返
 				string ver = "";
-				using (var cmd = new SqlCommand("SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(32))", c))
+				bool needVer = GetBool(req, "need_version", true);
+				if (needVer)
 				{
-					cmd.CommandTimeout = timeout;
-					object o = cmd.ExecuteScalar();
-					if (o != null && o != DBNull.Value) ver = Convert.ToString(o);
+					using (var cmd = new SqlCommand("SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(32))", c))
+					{
+						cmd.CommandTimeout = timeout;
+						object o = cmd.ExecuteScalar();
+						if (o != null && o != DBNull.Value) ver = Convert.ToString(o);
+					}
 				}
 				key = cs;
 				conn = c;
@@ -370,6 +403,10 @@ namespace SqlmngerMsCli
 			int timeout = GetInt(req, "timeout", 60);
 			if (timeout < 1) timeout = 60;
 
+			// row_format=array（默认）：rows 为二维数组，JSON 更小更快；object 兼容旧字典行
+			string rowFmt = GetStr(req, "row_format", "array").ToLowerInvariant();
+			bool asArray = rowFmt != "object" && rowFmt != "dict";
+
 			try
 			{
 				if (conn.State != ConnectionState.Open)
@@ -379,8 +416,10 @@ namespace SqlmngerMsCli
 				{
 					cmd.CommandTimeout = timeout;
 					var cols = new List<string>();
-					var rows = new List<Dictionary<string, object>>();
+					var rowsArr = asArray ? new List<object[]>(64) : null;
+					var rowsDict = asArray ? null : new List<Dictionary<string, object>>(64);
 					int affected = 0;
+					int fieldCount = 0;
 
 					using (var reader = cmd.ExecuteReader())
 					{
@@ -390,19 +429,33 @@ namespace SqlmngerMsCli
 							{
 								if (cols.Count == 0)
 								{
-									for (int i = 0; i < reader.FieldCount; i++)
+									fieldCount = reader.FieldCount;
+									for (int i = 0; i < fieldCount; i++)
 										cols.Add(reader.GetName(i));
 								}
 								while (reader.Read())
 								{
-									var row = new Dictionary<string, object>(cols.Count);
-									for (int i = 0; i < reader.FieldCount; i++)
+									if (asArray)
 									{
-										string name = i < cols.Count ? cols[i] : reader.GetName(i);
-										object v = reader.IsDBNull(i) ? null : reader.GetValue(i);
-										row[name] = NormalizeCell(v);
+										var cells = new object[fieldCount];
+										for (int i = 0; i < fieldCount; i++)
+										{
+											object v = reader.IsDBNull(i) ? null : reader.GetValue(i);
+											cells[i] = NormalizeCell(v);
+										}
+										rowsArr.Add(cells);
 									}
-									rows.Add(row);
+									else
+									{
+										var row = new Dictionary<string, object>(fieldCount);
+										for (int i = 0; i < fieldCount; i++)
+										{
+											string name = i < cols.Count ? cols[i] : reader.GetName(i);
+											object v = reader.IsDBNull(i) ? null : reader.GetValue(i);
+											row[name] = NormalizeCell(v);
+										}
+										rowsDict.Add(row);
+									}
 								}
 							}
 						} while (reader.NextResult());
@@ -417,7 +470,8 @@ namespace SqlmngerMsCli
 					var resp = OkEmpty(tls);
 					resp["tls"] = tls;
 					resp["columns"] = cols;
-					resp["rows"] = rows;
+					resp["rows"] = asArray ? (object)rowsArr : rowsDict;
+					resp["row_format"] = asArray ? "array" : "object";
 					resp["rows_affected"] = affected;
 					return resp;
 				}

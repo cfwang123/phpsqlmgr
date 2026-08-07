@@ -116,13 +116,9 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 
 		/**
 		 * 只断开到 CLI 的 TCP；不杀常驻进程（由 CLI 空闲 mssql_net_idle_sec 秒自退，默认 60）
+		 * 直接关 socket：CLI 在客户端断开时 ReleaseHeld 归还连接池，无需 close/quit 往返
 		 */
 		public function disconnect() {
-			if (is_resource($this->sock)) {
-				// 归还 SQL 连接到 CLI 池
-				$this->rpc(array('op' => 'close'), 2);
-				$this->rpc(array('op' => 'quit'), 1);
-			}
 			$this->closeSock();
 			$this->connected = false;
 		}
@@ -134,11 +130,13 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 				'rows_affected' => 0,
 				'messages' => array(),
 				'error' => null,
+				'row_format' => 'array',
 			);
 			if (!$this->connected || !is_resource($this->sock)) {
 				$result['error'] = '未连接';
 				return $result;
 			}
+			// 会话已 connect 时只传 sql；CLI 用 held 连接。附带连接信息仅作掉线重开兜底
 			$resp = $this->rpc(array(
 				'op' => 'query',
 				'host' => $this->host,
@@ -149,6 +147,7 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 				'encrypt' => $this->encrypt,
 				'trustServerCertificate' => $this->trustServerCertificate,
 				'timeout' => max($this->timeoutSec, 60),
+				'row_format' => 'array',
 				'sql' => strval($sql),
 			), max(30, $this->timeoutSec + 30));
 			if ($resp === false) {
@@ -164,6 +163,9 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 			}
 			if (!empty($resp['rows']) && is_array($resp['rows'])) {
 				$result['rows'] = $resp['rows'];
+			}
+			if (isset($resp['row_format'])) {
+				$result['row_format'] = strval($resp['row_format']);
 			}
 			if (isset($resp['rows_affected'])) {
 				$result['rows_affected'] = intval($resp['rows_affected']);
@@ -222,18 +224,18 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 
 		/**
 		 * 连已有守护；没有则启动
+		 * 热路径：TCP 连上即视为可用，不做 ping 往返（省 1 次 RTT）
 		 * @return bool
 		 */
 		private function ensureDaemonAndConnect() {
 			// 1) 尝试已有 port
 			$tcpPort = $this->readPortFile();
-			if ($tcpPort > 0 && $this->trySock($tcpPort)) {
-				// 探活
-				$pong = $this->rpc(array('op' => 'ping'), 3);
-				if ($pong !== false && !empty($pong['ok'])) {
+			if ($tcpPort > 0) {
+				if ($this->trySock($tcpPort)) {
 					return true;
 				}
-				$this->closeSock();
+				// 端口文件过期（进程已退）：清掉，避免反复撞死端口
+				@unlink(self::portFilePath());
 			}
 
 			// 2) 启动（可能与其它请求竞态；CLI Mutex 保证单例）
@@ -241,11 +243,7 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 				// 启动失败：再试一次 port（别人可能已起好）
 				$tcpPort = $this->readPortFile();
 				if ($tcpPort > 0 && $this->trySock($tcpPort)) {
-					$pong = $this->rpc(array('op' => 'ping'), 3);
-					if ($pong !== false && !empty($pong['ok'])) {
-						return true;
-					}
-					$this->closeSock();
+					return true;
 				}
 				if ($this->lastError === null) {
 					$this->lastError = '无法启动或连接 SqlmngerMsCli';
@@ -284,13 +282,27 @@ if (!defined('SQLMNGER_MSSQL_NET_CLIENT')) {
 		private function trySock($tcpPort) {
 			$errno = 0;
 			$errstr = '';
-			$sock = @fsockopen('127.0.0.1', $tcpPort, $errno, $errstr, 1.5);
+			// 死端口应快速失败；0.4s 足够本机拒绝
+			$sock = @fsockopen('127.0.0.1', $tcpPort, $errno, $errstr, 0.4);
 			if (!is_resource($sock)) {
 				return false;
 			}
 			stream_set_timeout($sock, max(5, $this->timeoutSec + 20));
+			// 关闭 Nagle，小包 RPC 不被合并延迟
+			$this->setSockNoDelay($sock);
 			$this->sock = $sock;
 			return true;
+		}
+
+		/** @param resource $sock */
+		private function setSockNoDelay($sock) {
+			if (!function_exists('socket_import_stream') || !defined('TCP_NODELAY')) {
+				return;
+			}
+			$s = @socket_import_stream($sock);
+			if ($s !== false) {
+				@socket_set_option($s, SOL_TCP, TCP_NODELAY, 1);
+			}
 		}
 
 		/** @return bool */

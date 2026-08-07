@@ -330,14 +330,36 @@ function sqlmnger_tds_query_all($client, $sql) {
 	}
 	$cols = isset($r['columns']) && is_array($r['columns']) ? $r['columns'] : array();
 	$rows = array();
+	$rowFmt = isset($r['row_format']) ? strval($r['row_format']) : '';
 	if (!empty($r['rows']) && is_array($r['rows'])) {
 		foreach ($r['rows'] as $ra) {
+			if (!is_array($ra)) {
+				continue;
+			}
+			// mssql_net 默认 array 行：[[v0,v1],...]，避免按列名二次映射
+			$isList = ($rowFmt === 'array');
+			if (!$isList) {
+				// 无标记时：存在 0 下标且不像关联列名 → 数组行
+				$firstCol = (count($cols) > 0) ? $cols[0] : null;
+				$isList = array_key_exists(0, $ra) && ($firstCol === null || !array_key_exists($firstCol, $ra));
+			}
+			if ($isList) {
+				$line = array();
+				$n = count($ra);
+				$lim = (count($cols) > 0) ? count($cols) : $n;
+				for ($i = 0; $i < $lim; $i++) {
+					$v = array_key_exists($i, $ra) ? $ra[$i] : null;
+					$line[] = sqlmnger_cell_export($v);
+				}
+				$rows[] = $line;
+				continue;
+			}
 			$line = array();
-			if (count($cols) === 0 && is_array($ra)) {
+			if (count($cols) === 0) {
 				$cols = array_keys($ra);
 			}
 			foreach ($cols as $cn) {
-				$v = (is_array($ra) && array_key_exists($cn, $ra)) ? $ra[$cn] : null;
+				$v = array_key_exists($cn, $ra) ? $ra[$cn] : null;
 				$line[] = sqlmnger_cell_export($v);
 			}
 			$rows[] = $line;
@@ -650,10 +672,12 @@ function sqlmnger_list_tables($h, $database) {
 
 /**
  * 表结构：列 + 索引 + 主键列
+ * @param array|null $opts light=true 时跳过索引与 create_sql（表数据页热路径，少 1～2 次往返）
  */
-function sqlmnger_table_structure($h, $database, $table) {
+function sqlmnger_table_structure($h, $database, $table, $opts = null) {
 	$driver = $h['driver'];
 	$qTable = sqlmnger_ident_quote($driver, $table);
+	$light = is_array($opts) && !empty($opts['light']);
 
 	if ($driver === 'mysql') {
 		$cols = array();
@@ -689,41 +713,42 @@ function sqlmnger_table_structure($h, $database, $table) {
 			}
 		}
 
-		// 索引
-		$idxMap = array();
-		$ri = sqlmnger_query_all($h, 'SHOW INDEX FROM ' . $qTable, array());
-		// Table, Non_unique, Key_name, Seq_in_index, Column_name, ...
-		// 列顺序依赖 SHOW INDEX 输出：用关联更难，按常见顺序
-		// 我们 query_all 用列名 order from meta
-		$colNames = $ri['columns'];
-		$iKey = array_search('Key_name', $colNames);
-		$iNon = array_search('Non_unique', $colNames);
-		$iSeq = array_search('Seq_in_index', $colNames);
-		$iCol = array_search('Column_name', $colNames);
-		$iType = array_search('Index_type', $colNames);
-		if ($iKey === false) {
-			// 回退位置
-			$iNon = 1; $iKey = 2; $iSeq = 3; $iCol = 4; $iType = 10;
+		// 索引（light 模式跳过）
+		$indexes = array();
+		if (!$light) {
+			$idxMap = array();
+			$ri = sqlmnger_query_all($h, 'SHOW INDEX FROM ' . $qTable, array());
+			// Table, Non_unique, Key_name, Seq_in_index, Column_name, ...
+			$colNames = $ri['columns'];
+			$iKey = array_search('Key_name', $colNames);
+			$iNon = array_search('Non_unique', $colNames);
+			$iSeq = array_search('Seq_in_index', $colNames);
+			$iCol = array_search('Column_name', $colNames);
+			$iType = array_search('Index_type', $colNames);
+			if ($iKey === false) {
+				// 回退位置
+				$iNon = 1; $iKey = 2; $iSeq = 3; $iCol = 4; $iType = 10;
+			}
+			foreach ($ri['rows'] as $row) {
+				$kn = isset($row[$iKey]) ? strval($row[$iKey]) : '';
+				if ($kn === '') {
+					continue;
+				}
+				if (!isset($idxMap[$kn])) {
+					$idxMap[$kn] = array(
+						'name' => $kn,
+						'unique' => (isset($row[$iNon]) && intval($row[$iNon]) === 0),
+						'primary' => ($kn === 'PRIMARY'),
+						'type' => isset($row[$iType]) ? $row[$iType] : null,
+						'columns' => array(),
+					);
+				}
+				if (isset($row[$iCol])) {
+					$idxMap[$kn]['columns'][] = $row[$iCol];
+				}
+			}
+			$indexes = array_values($idxMap);
 		}
-		foreach ($ri['rows'] as $row) {
-			$kn = isset($row[$iKey]) ? strval($row[$iKey]) : '';
-			if ($kn === '') {
-				continue;
-			}
-			if (!isset($idxMap[$kn])) {
-				$idxMap[$kn] = array(
-					'name' => $kn,
-					'unique' => (isset($row[$iNon]) && intval($row[$iNon]) === 0),
-					'primary' => ($kn === 'PRIMARY'),
-					'type' => isset($row[$iType]) ? $row[$iType] : null,
-					'columns' => array(),
-				);
-			}
-			if (isset($row[$iCol])) {
-				$idxMap[$kn]['columns'][] = $row[$iCol];
-			}
-		}
-		$indexes = array_values($idxMap);
 
 		return array(
 			'columns' => $cols,
@@ -731,7 +756,7 @@ function sqlmnger_table_structure($h, $database, $table) {
 			'primary_key' => $pk,
 			'table' => $table,
 			'database' => $database,
-			'create_sql' => sqlmnger_table_create_sql($h, $database, $table),
+			'create_sql' => $light ? null : sqlmnger_table_create_sql($h, $database, $table),
 		);
 	}
 
@@ -758,24 +783,26 @@ function sqlmnger_table_structure($h, $database, $table) {
 			}
 		}
 		$indexes = array();
-		$ri = sqlmnger_query_all($h, 'PRAGMA index_list(' . $qTable . ')', array());
-		foreach ($ri['rows'] as $row) {
-			// seq, name, unique, origin, partial
-			$iname = $row[1];
-			$unique = !empty($row[2]);
-			$ix = sqlmnger_query_all($h, 'PRAGMA index_info(' . sqlmnger_ident_quote($driver, $iname) . ')', array());
-			$icols = array();
-			foreach ($ix['rows'] as $ir) {
-				// seqno, cid, name
-				$icols[] = $ir[2];
+		if (!$light) {
+			$ri = sqlmnger_query_all($h, 'PRAGMA index_list(' . $qTable . ')', array());
+			foreach ($ri['rows'] as $row) {
+				// seq, name, unique, origin, partial
+				$iname = $row[1];
+				$unique = !empty($row[2]);
+				$ix = sqlmnger_query_all($h, 'PRAGMA index_info(' . sqlmnger_ident_quote($driver, $iname) . ')', array());
+				$icols = array();
+				foreach ($ix['rows'] as $ir) {
+					// seqno, cid, name
+					$icols[] = $ir[2];
+				}
+				$indexes[] = array(
+					'name' => $iname,
+					'unique' => $unique,
+					'primary' => false,
+					'type' => null,
+					'columns' => $icols,
+				);
 			}
-			$indexes[] = array(
-				'name' => $iname,
-				'unique' => $unique,
-				'primary' => false,
-				'type' => null,
-				'columns' => $icols,
-			);
 		}
 		return array(
 			'columns' => $cols,
@@ -783,7 +810,7 @@ function sqlmnger_table_structure($h, $database, $table) {
 			'primary_key' => $pk,
 			'table' => $table,
 			'database' => $database,
-			'create_sql' => sqlmnger_table_create_sql($h, $database, $table),
+			'create_sql' => $light ? null : sqlmnger_table_create_sql($h, $database, $table),
 		);
 	}
 
@@ -831,37 +858,41 @@ function sqlmnger_table_structure($h, $database, $table) {
 			$cols[$k]['key'] = 'PRI';
 		}
 	}
-	// indexes
-	$sqlIx = "SELECT i.name, i.is_unique, i.is_primary_key, c.name AS col_name, ic.key_ordinal
-		FROM sys.indexes i
-		INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-		INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-		INNER JOIN sys.tables t ON i.object_id = t.object_id
-		INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-		WHERE s.name = 'dbo' AND t.name = ? AND i.name IS NOT NULL
-		ORDER BY i.name, ic.key_ordinal";
-	$rix = sqlmnger_query_all($h, $sqlIx, array($table));
-	$idxMap = array();
-	foreach ($rix['rows'] as $row) {
-		$kn = strval($row[0]);
-		if (!isset($idxMap[$kn])) {
-			$idxMap[$kn] = array(
-				'name' => $kn,
-				'unique' => !empty($row[1]),
-				'primary' => !empty($row[2]),
-				'type' => null,
-				'columns' => array(),
-			);
+	// indexes（light 跳过）
+	$indexes = array();
+	if (!$light) {
+		$sqlIx = "SELECT i.name, i.is_unique, i.is_primary_key, c.name AS col_name, ic.key_ordinal
+			FROM sys.indexes i
+			INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+			INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+			INNER JOIN sys.tables t ON i.object_id = t.object_id
+			INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+			WHERE s.name = 'dbo' AND t.name = ? AND i.name IS NOT NULL
+			ORDER BY i.name, ic.key_ordinal";
+		$rix = sqlmnger_query_all($h, $sqlIx, array($table));
+		$idxMap = array();
+		foreach ($rix['rows'] as $row) {
+			$kn = strval($row[0]);
+			if (!isset($idxMap[$kn])) {
+				$idxMap[$kn] = array(
+					'name' => $kn,
+					'unique' => !empty($row[1]),
+					'primary' => !empty($row[2]),
+					'type' => null,
+					'columns' => array(),
+				);
+			}
+			$idxMap[$kn]['columns'][] = $row[3];
 		}
-		$idxMap[$kn]['columns'][] = $row[3];
+		$indexes = array_values($idxMap);
 	}
 	return array(
 		'columns' => $cols,
-		'indexes' => array_values($idxMap),
+		'indexes' => $indexes,
 		'primary_key' => $pk,
 		'table' => $table,
 		'database' => $database,
-		'create_sql' => sqlmnger_table_create_sql($h, $database, $table),
+		'create_sql' => $light ? null : sqlmnger_table_create_sql($h, $database, $table),
 	);
 }
 
@@ -1100,7 +1131,8 @@ function sqlmnger_table_data_payload($h, $database, $table, $limit, $where, $off
 		$offset = 0;
 	}
 	$driver = $h['driver'];
-	$struct = sqlmnger_table_structure($h, $database, $table);
+	// light：只要列名 + PK，跳过索引/DDL（mssql_net 每次结构查询都是跨进程 RPC）
+	$struct = sqlmnger_table_structure($h, $database, $table, array('light' => true));
 	$qTable = sqlmnger_ident_quote($driver, $table);
 	if (sqlmnger_is_mssql_family($driver)) {
 		$qTable = sqlmnger_ident_quote($driver, 'dbo') . '.' . $qTable;
